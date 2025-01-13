@@ -2,6 +2,7 @@ package RPGbot;
 
 import battlecode.common.*;
 
+import java.util.HashMap;
 import java.util.Random;
 
 
@@ -9,7 +10,10 @@ public class RobotPlayer {
 
     static int turnCount = 0;
     static int soldierCooldown = 0;
+    static int mopperCooldown = 0;
     static boolean spawnedMopper = false;
+    static HashMap<MapLocation, Integer> checked = new HashMap<>();
+    static int checked_limit = 1;
 
     static final Random rng = new Random(6147);
 
@@ -78,15 +82,15 @@ public class RobotPlayer {
         else {
 //            System.out.println("Soldier cooldown exceeded");
 //            robotType = rng.nextInt(1,3);
-            if (rc.canBuildRobot(UnitType.MOPPER, nextLoc) && !spawnedMopper){
+            if (rc.canBuildRobot(UnitType.MOPPER, nextLoc) && mopperCooldown <= 4){
                 rc.buildRobot(UnitType.MOPPER, nextLoc);
                 System.out.println("BUILT A MOPPER");
-                spawnedMopper = true;
+                mopperCooldown ++;
             }
             else if (rc.canBuildRobot(UnitType.SPLASHER, nextLoc)){
                 rc.buildRobot(UnitType.SPLASHER, nextLoc);
                 rc.setIndicatorString("BUILT A SPLASHER");
-                spawnedMopper = false;
+                mopperCooldown = 0;
             }
         }
 
@@ -107,12 +111,15 @@ public class RobotPlayer {
 
 
         MapInfo curRuin = getNearestRuin(rc);
+        boolean moved = false;
 
         if (curRuin != null){
+            Direction dir = rc.getLocation().directionTo(curRuin.getMapLocation());
             MapLocation targetLoc = curRuin.getMapLocation();
-            Direction dir = rc.getLocation().directionTo(targetLoc);
-            if (rc.canMove(dir))
-                rc.move(dir);
+            moveSoldier(rc, targetLoc);
+
+
+
 
             // Mark the pattern we need to draw to build a tower here if we haven't already.
             MapLocation shouldBeMarked = curRuin.getMapLocation().subtract(dir);
@@ -140,11 +147,14 @@ public class RobotPlayer {
 
         // TODO: implement strategy for direction
         // Move and attack randomly if no objective.
+
         Direction dir = directions[rng.nextInt(directions.length)];
         MapLocation nextLoc = rc.getLocation().add(dir);
-        if (rc.canMove(dir)){
+
+        if (rc.canMove(dir) && rc.canAttack(nextLoc)) {
             rc.move(dir);
         }
+
 
         // Try to paint beneath us as we walk to avoid paint penalties.
         // Avoiding wasting paint by re-painting our own tiles.
@@ -160,9 +170,7 @@ public class RobotPlayer {
         // Move and attack randomly.
         Direction dir = directions[rng.nextInt(directions.length)];
         MapLocation nextLoc = rc.getLocation().add(dir);
-        if (rc.canMove(dir)){
-            rc.move(dir);
-        }
+        moveSoldier(rc, nextLoc);
         if (rc.canMopSwing(dir)){
             rc.mopSwing(dir);
 //            System.out.println("Mop Swing! Booyah!");
@@ -250,5 +258,53 @@ public class RobotPlayer {
             }
         }
         return curRuin;
+    }
+
+    public static void moveSoldier(RobotController rc, MapLocation loc) throws GameActionException {
+        boolean moved = false;
+
+        if (loc != null) {
+            Direction dir = rc.getLocation().directionTo(loc);
+            MapLocation newLoc = rc.getLocation().add(dir);
+            boolean needsPainting = !rc.senseMapInfo(newLoc).getPaint().isAlly();
+
+            if (needsPainting && rc.canMove(dir) && rc.canAttack(newLoc)) {
+                rc.move(dir);
+                checked.put(newLoc, 1);
+                return;
+            } else {
+                for (Direction unit_dir : directions) {
+                    if (rc.canMove(unit_dir) && rc.canAttack(newLoc)) {
+                        needsPainting = !rc.senseMapInfo(rc.getLocation().add(unit_dir)).getPaint().isAlly();
+                        newLoc = rc.getLocation().add(unit_dir);
+                        if (needsPainting) {
+                            rc.move(unit_dir);
+                            checked.put(newLoc, 1);
+                            return;
+                        }
+
+                    }
+                }
+            }
+        }
+
+
+        Direction dir = directions[rng.nextInt(directions.length)];
+        MapLocation newLoc = rc.getLocation().add(dir);
+
+        if (rc.canMove(dir) && !checked.containsKey(newLoc) && rc.canAttack(newLoc)) {
+            checked.put(newLoc, 1);
+            rc.move(dir);
+            return;
+        }
+
+        for (Direction unit_dir : directions) {
+            newLoc = rc.getLocation().add(dir);
+            if (rc.canMove(dir) && rc.canAttack(newLoc)) {
+                rc.move(dir);
+                return;
+            }
+        }
+
     }
 }
