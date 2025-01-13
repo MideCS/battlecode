@@ -73,7 +73,7 @@ public class RobotPlayer {
 
 //        int robotType = 0;
 
-        if (soldierCooldown < 10) {
+        if (soldierCooldown < 30) {
             if (rc.canBuildRobot(UnitType.SOLDIER, nextLoc)){
                 rc.buildRobot(UnitType.SOLDIER, nextLoc);
 //                System.out.println("BUILT A SOLDIER");
@@ -82,7 +82,7 @@ public class RobotPlayer {
         else {
 //            System.out.println("Soldier cooldown exceeded");
 //            robotType = rng.nextInt(1,3);
-            if (rc.canBuildRobot(UnitType.MOPPER, nextLoc) && mopperCooldown <= 4){
+            if (rc.canBuildRobot(UnitType.MOPPER, nextLoc) && mopperCooldown <= 1){
                 rc.buildRobot(UnitType.MOPPER, nextLoc);
                 System.out.println("BUILT A MOPPER");
                 mopperCooldown ++;
