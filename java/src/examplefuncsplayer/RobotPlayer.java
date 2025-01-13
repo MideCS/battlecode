@@ -54,7 +54,7 @@ public class RobotPlayer {
     public static void run(RobotController rc) throws GameActionException {
         // Hello world! Standard output is very useful for debugging.
         // Everything you say here will be directly viewable in your terminal when you run a match!
-        System.out.println("I'm alive");
+//        System.out.println("I'm alive");
 
         // You can also use indicators to save debug notes in replays.
         rc.setIndicatorString("Hello world!");
@@ -115,23 +115,23 @@ public class RobotPlayer {
         int robotType = rng.nextInt(3);
         if (robotType == 0 && rc.canBuildRobot(UnitType.SOLDIER, nextLoc)){
             rc.buildRobot(UnitType.SOLDIER, nextLoc);
-            System.out.println("BUILT A SOLDIER");
+//            System.out.println("BUILT A SOLDIER");
         }
         else if (robotType == 1 && rc.canBuildRobot(UnitType.MOPPER, nextLoc)){
             rc.buildRobot(UnitType.MOPPER, nextLoc);
-            System.out.println("BUILT A MOPPER");
+//            System.out.println("BUILT A MOPPER");
         }
         else if (robotType == 2 && rc.canBuildRobot(UnitType.SPLASHER, nextLoc)){
             // rc.buildRobot(UnitType.SPLASHER, nextLoc);
             // System.out.println("BUILT A SPLASHER");
-            rc.setIndicatorString("SPLASHER NOT IMPLEMENTED YET");
+//            rc.setIndicatorString("SPLASHER NOT IMPLEMENTED YET");
         }
 
         // Read incoming messages
-        Message[] messages = rc.readMessages(-1);
-        for (Message m : messages) {
-            System.out.println("Tower received message: '#" + m.getSenderID() + " " + m.getBytes());
-        }
+//        Message[] messages = rc.readMessages(-1);
+//        for (Message m : messages) {
+//            System.out.println("Tower received message: '#" + m.getSenderID() + " " + m.getBytes());
+//        }
 
         // TODO: can we attack other bots?
     }
@@ -206,7 +206,7 @@ public class RobotPlayer {
         }
         if (rc.canMopSwing(dir)){
             rc.mopSwing(dir);
-            System.out.println("Mop Swing! Booyah!");
+//            System.out.println("Mop Swing! Booyah!");
         }
         else if (rc.canAttack(nextLoc)){
             rc.attack(nextLoc);
