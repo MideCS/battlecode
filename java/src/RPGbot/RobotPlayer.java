@@ -3,6 +3,7 @@ package RPGbot;
 import battlecode.common.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Random;
 
 
@@ -22,9 +23,9 @@ public class RobotPlayer {
         SAVE_TOWER,
     }
     static int savingTurns = 0;
-    // TODO: store messenger status
-    // TODO: store known towers
-    // TODO: store saving turns
+    static HashSet<MapLocation> exploredRuins = new HashSet<>(); // Tracks explored ruins
+    static int totalRuinsVisited = 0;
+
 
     static final Random rng = new Random(6147);
 
@@ -78,24 +79,6 @@ public class RobotPlayer {
 
     }
 
-//    public static searchForRuin(RobotController rc) throws GameActionException{
-//
-//    }
-
-    public static void runMessenger(RobotController rc) throws GameActionException{
-        MapInfo nearestRuin = getNearestRuin(rc);
-
-        // Found a ruin, relay it back to closest tower
-        if (nearestRuin != null) {
-            MapLocation targetLoc = nearestRuin.getMapLocation();
-            Direction dir = rc.getLocation().directionTo(targetLoc);
-            if (rc.canMove(dir))
-                rc.move(dir);
-        }
-
-    }
-
-
     public static void runTower(RobotController rc) throws GameActionException{
 
         // TODO: Add saving for Tower when Ruin is reached.
@@ -135,13 +118,13 @@ public class RobotPlayer {
 
             if (m.getBytes() == MessageType.SAVE_CHIPS.ordinal() && !isSaving) {
                 savingTurns = 18;
+                System.out.println("Tower received SAVE_CHIPS message. Starting to save.");
             }
 
         }
 
         // TODO: can we attack other bots?
     }
-
 
     public static void runSoldier(RobotController rc) throws GameActionException{
 
@@ -153,10 +136,11 @@ public class RobotPlayer {
         MapInfo curRuin = getNearestRuin(rc);
 
         if (isMessenger && isSaving && knownTowers.size() > 0) {
-            MapLocation dst = knownTowers.get(0);
+            MapLocation dst = knownTowers.get(rng.nextInt(knownTowers.size()));
             Direction dir = rc.getLocation().directionTo(dst);
-            if (rc.canMove(dir))
+            if (rc.canMove(dir)) {
                 rc.move(dir);
+            }
         }
 
         if (curRuin != null){
@@ -312,7 +296,7 @@ public class RobotPlayer {
         int closestRuin = Integer.MAX_VALUE;
         Direction dir = null;
         for (MapInfo tile : nearbyTiles) {
-            if (tile.hasRuin() && rc.senseRobotAtLocation(tile.getMapLocation()) == null) {
+            if (tile.hasRuin() && rc.senseRobotAtLocation(tile.getMapLocation()) == null && !exploredRuins.contains(tile.getMapLocation())) {
 //                Starting saving because seen a ruin
                 int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
 
