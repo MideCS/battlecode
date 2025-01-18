@@ -1,9 +1,12 @@
 package Optimized;
 import battlecode.common.*;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Random;
+
+import apple.laf.JRSUIConstants.Direction;
 
 // Final optimized RobotPlayer with strategic saving and upgrading logic
 public class RobotPlayer {
@@ -189,6 +192,11 @@ public class RobotPlayer {
         if (rc.canSenseLocation(target) && rc.senseMapInfo(target).hasRuin()) {
             buildTowerOnRuin(rc); // Build tower if at the ruin
             sendMessengerToNotify(rc); // Notify towers to save resources
+        }  
+        // Avoiding wasting paint by re-painting our own tiles. // Try to paint beneath us as we walk to avoid 
+        MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
+        if (!currentTile.getPaint().isAlly() && rc.canAttack(rc.getLocation())){
+            rc.attack(rc.getLocation());
         }
     }
 
