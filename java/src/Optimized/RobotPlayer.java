@@ -1,10 +1,11 @@
 package RPGbot;
 import battlecode.common.*;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Random;
 
-// Final optimized RobotPlayer with inline comments explaining key logic
+// Final optimized RobotPlayer with strategic saving and upgrading logic
 public class RobotPlayer {
 
     // Game state variables for tracking turn count and cooldowns
@@ -18,8 +19,8 @@ public class RobotPlayer {
 
     // Predefined directions for movement
     static final Direction[] directions = {
-            Direction.NORTH, Direction.NORTHEAST, Direction.EAST, Direction.SOUTHEAST,
-            Direction.SOUTH, Direction.SOUTHWEST, Direction.WEST, Direction.NORTHWEST
+        Direction.NORTH, Direction.NORTHEAST, Direction.EAST, Direction.SOUTHEAST,
+        Direction.SOUTH, Direction.SOUTHWEST, Direction.WEST, Direction.NORTHWEST
     };
 
     // Pathfinding variables
@@ -30,9 +31,17 @@ public class RobotPlayer {
     static Direction tracingDirection;
     static int obstacleStarDist;
 
+    // Unit ratios for production
+    static final double SOLDIER_RATIO = 0.5; // 50% Soldiers
+    static final double MOPPER_RATIO = 0.3;  // 30% Moppers
+    static final double SPLASHER_RATIO = 0.2; // 20% Splashers
+    static int soldierCount = 0;
+    static int mopperCount = 0;
+    static int splasherCount = 0;
+
     // Enum for message types
     private enum MessageType {
-        SAVE_CHIPS, SAVE_TOWER
+        SAVE_CHIPS, SAVE_TOWER, UPGRADE_TOWER
     }
 
     // Main loop for the robot controller
@@ -63,7 +72,8 @@ public class RobotPlayer {
     public static void runTower(RobotController rc) throws GameActionException {
         manageResources(rc); // Handle saving turns and resource management
         processMessages(rc); // Read and act on messages from other units
-        buildUnits(rc); // Build new robots if possible
+        buildUnits(rc); // Build new robots based on optimal ratios
+        upgradeTowerIfAdvantageous(rc); // Upgrade tower if conditions allow
     }
 
     // Manages saving resources for specific actions
@@ -80,49 +90,138 @@ public class RobotPlayer {
     private static void processMessages(RobotController rc) throws GameActionException {
         for (Message message : rc.readMessages(-1)) {
             if (message.getBytes() == MessageType.SAVE_CHIPS.ordinal()) {
-                savingTurns = 18; // Begin saving for a predefined duration
+                savingTurns = 20; // Save for 20 turns
+                isSaving = true;
+            } else if (message.getBytes() == MessageType.UPGRADE_TOWER.ordinal()) {
+                savingTurns = 30; // Save for upgrading the tower
                 isSaving = true;
             }
         }
     }
 
-    // Builds units (Soldiers, Moppers, or Splashers) based on conditions
+    // Builds units based on optimal ratios
     private static void buildUnits(RobotController rc) throws GameActionException {
         Direction randomDir = directions[rng.nextInt(directions.length)]; // Pick a random direction
         MapLocation nextLoc = rc.getLocation().add(randomDir);
 
-        if (soldierCooldown == 0 && rc.canBuildRobot(UnitType.SOLDIER, nextLoc)) {
-            rc.buildRobot(UnitType.SOLDIER, nextLoc); // Build a Soldier
-            soldierCooldown = 40; // Reset cooldown
-        } else if (rc.canBuildRobot(isMopper ? UnitType.SPLASHER : UnitType.MOPPER, nextLoc)) {
-            rc.buildRobot(isMopper ? UnitType.SPLASHER : UnitType.MOPPER, nextLoc);
-            isMopper = !isMopper; // Alternate between Mopper and Splasher
+        // Calculate the total count of robots produced
+        int totalProduced = soldierCount + mopperCount + splasherCount;
+
+        // Decide the next unit type to produce
+        if (totalProduced == 0 || (double) soldierCount / totalProduced < SOLDIER_RATIO) {
+            if (rc.canBuildRobot(UnitType.SOLDIER, nextLoc)) {
+                rc.buildRobot(UnitType.SOLDIER, nextLoc);
+                soldierCount++;
+                return;
+            }
         }
-        soldierCooldown = Math.max(0, soldierCooldown - 1); // Decrease cooldown
+        if ((double) mopperCount / totalProduced < MOPPER_RATIO) {
+            if (rc.canBuildRobot(UnitType.MOPPER, nextLoc)) {
+                rc.buildRobot(UnitType.MOPPER, nextLoc);
+                mopperCount++;
+                return;
+            }
+        }
+        if ((double) splasherCount / totalProduced < SPLASHER_RATIO) {
+            if (rc.canBuildRobot(UnitType.SPLASHER, nextLoc)) {
+                rc.buildRobot(UnitType.SPLASHER, nextLoc);
+                splasherCount++;
+            }
+        }
+    }
+
+    // Upgrades towers if advantageous
+    private static void upgradeTowerIfAdvantageous(RobotController rc) throws GameActionException {
+        if (isAdvantageousPosition(rc)) { // Check if advantageous position
+            for (MapLocation loc : knownTowers) {
+                if (rc.canMarkTowerPattern(UnitType.LEVEL_TWO_PAINT_TOWER, loc)) {
+                    rc.markTowerPattern(UnitType.LEVEL_TWO_PAINT_TOWER, loc);
+                    rc.setIndicatorString("Upgrading tower at " + loc);
+                }
+                if (rc.canCompleteTowerPattern(UnitType.LEVEL_TWO_PAINT_TOWER, loc)) {
+                    rc.completeTowerPattern(UnitType.LEVEL_TWO_PAINT_TOWER, loc);
+                    System.out.println("Upgraded tower at " + loc);
+                }
+            }
+        }
+    }
+
+    // Checks if the team is in an advantageous position
+    private static boolean isAdvantageousPosition(RobotController rc) throws GameActionException {
+        int ourTowers = rc.getTeamTowers().length;
+        int ourRobots = rc.senseNearbyRobots(-1, rc.getTeam()).length;
+
+        int enemyTowers = rc.getOpponentTowers().length;
+        int enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent()).length;
+
+        int requiredTowers = (int) Math.ceil(1.5 * enemyTowers);
+        int requiredRobots = 2 * enemyRobots;
+
+        return ourTowers >= requiredTowers && ourRobots >= requiredRobots; // Check for advantageous position
     }
 
     // Logic for Soldier robots
     public static void runSoldier(RobotController rc) throws GameActionException {
         if (target == null) {
-            target = findStrategicTarget(rc); // Select a target dynamically
+            target = findEmptyRuin(rc); // Prioritize empty ruins
         }
         bug2(rc); // Use Bug2 algorithm for pathfinding
-        engageNearbyEnemies(rc); // Attack nearby enemies if possible
+        if (rc.canSenseLocation(target) && rc.senseMapInfo(target).hasRuin()) {
+            buildTowerOnRuin(rc); // Build tower if at the ruin
+            sendMessengerToNotify(rc); // Notify towers to save resources
+        }
     }
 
-    // Finds a high-value target for the soldier
-    private static MapLocation findStrategicTarget(RobotController rc) {
-        return new MapLocation(10, 10); // Example target; replace with dynamic logic
-    }
-
-    // Engages nearby enemies by attacking them
-    private static void engageNearbyEnemies(RobotController rc) throws GameActionException {
-        RobotInfo[] enemies = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
-        for (RobotInfo enemy : enemies) {
-            if (rc.canAttack(enemy.getLocation())) {
-                rc.attack(enemy.getLocation()); // Attack the first valid enemy
+    // Sends a message to friendly towers to start saving resources
+    private static void sendMessengerToNotify(RobotController rc) throws GameActionException {
+        RobotInfo[] friendlyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
+        for (RobotInfo robot : friendlyRobots) {
+            if (robot.getType() == UnitType.MOPPER && rc.canSendMessage(robot.getLocation())) {
+                rc.sendMessage(robot.getLocation(), MessageType.SAVE_CHIPS.ordinal());
+                System.out.println("Messenger Mopper sent to notify towers");
                 break;
             }
+        }
+    }
+
+    // Finds the nearest empty ruin on the map
+    private static MapLocation findEmptyRuin(RobotController rc) throws GameActionException {
+        MapInfo[] tiles = rc.senseNearbyMapInfos();
+        MapLocation nearestRuin = null;
+        int minDist = Integer.MAX_VALUE;
+
+        for (MapInfo tile : tiles) {
+            if (tile.hasRuin() && tile.getMark() == PaintType.EMPTY) { // Check for empty ruin
+                int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
+                if (dist < minDist) {
+                    nearestRuin = tile.getMapLocation();
+                    minDist = dist;
+                }
+            }
+        }
+        return nearestRuin;
+    }
+
+    // Builds a tower on the ruin if possible
+    private static void buildTowerOnRuin(RobotController rc) throws GameActionException {
+        if (rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, target)) {
+            rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, target);
+            System.out.println("Marking tower pattern at " + target);
+        }
+
+        MapInfo[] nearbyTiles = rc.senseNearbyMapInfos(target, 8);
+        for (MapInfo tile : nearbyTiles) {
+            if (tile.getMark() != tile.getPaint() && tile.getMark() != PaintType.EMPTY) {
+                boolean useSecondaryColor = tile.getMark() == PaintType.ALLY_SECONDARY;
+                if (rc.canAttack(tile.getMapLocation())) {
+                    rc.attack(tile.getMapLocation(), useSecondaryColor); // Paint the required tiles
+                }
+            }
+        }
+
+        if (rc.canCompleteTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, target)) {
+            rc.completeTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, target);
+            System.out.println("Tower built at " + target);
         }
     }
 
@@ -260,6 +359,7 @@ public class RobotPlayer {
         }
     }
 }
+
 
 
 
