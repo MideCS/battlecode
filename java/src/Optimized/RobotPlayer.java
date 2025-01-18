@@ -1,4 +1,4 @@
-package RPGbot;
+package Optimized;
 import battlecode.common.*;
 
 import java.util.ArrayList;
