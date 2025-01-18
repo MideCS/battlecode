@@ -1,12 +1,8 @@
 package RPGbot;
 import battlecode.common.*;
-
-import java.time.Clock;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Random;
 
-import apple.laf.JRSUIConstants.Direction;
 // RobotPlayer class that is going to have  all our functionality
 public class RobotPlayer {
 

@@ -8,10 +8,8 @@ import java.util.Random;
 // Final optimized RobotPlayer with strategic saving and upgrading logic
 public class RobotPlayer {
 
-    // Game state variables for tracking turn count and cooldowns
+    // Game state variables for tracking turn count and saving
     static int turnCount = 0;
-    static int soldierCooldown = 0;
-    static boolean isMopper = false;
     static boolean isSaving = false;
     static ArrayList<MapLocation> knownTowers = new ArrayList<>();
     static int savingTurns = 0;
@@ -148,16 +146,38 @@ public class RobotPlayer {
 
     // Checks if the team is in an advantageous position
     private static boolean isAdvantageousPosition(RobotController rc) throws GameActionException {
-        int ourTowers = rc.getTeamTowers().length;
+        int ourTowers = getTeamTowers(rc).length;
         int ourRobots = rc.senseNearbyRobots(-1, rc.getTeam()).length;
 
-        int enemyTowers = rc.getOpponentTowers().length;
+        int enemyTowers = getOpponentTowers(rc).length;
         int enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent()).length;
 
         int requiredTowers = (int) Math.ceil(1.5 * enemyTowers);
         int requiredRobots = 2 * enemyRobots;
 
         return ourTowers >= requiredTowers && ourRobots >= requiredRobots; // Check for advantageous position
+    }
+
+    // Retrieves all team towers
+    private static MapLocation[] getTeamTowers(RobotController rc) throws GameActionException {
+        ArrayList<MapLocation> towers = new ArrayList<>();
+        for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam())) {
+            if (robot.getType().isTowerType()) {
+                towers.add(robot.getLocation());
+            }
+        }
+        return towers.toArray(new MapLocation[0]);
+    }
+
+    // Retrieves all opponent towers
+    private static MapLocation[] getOpponentTowers(RobotController rc) throws GameActionException {
+        ArrayList<MapLocation> towers = new ArrayList<>();
+        for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
+            if (robot.getType().isTowerType()) {
+                towers.add(robot.getLocation());
+            }
+        }
+        return towers.toArray(new MapLocation[0]);
     }
 
     // Logic for Soldier robots
@@ -290,39 +310,28 @@ public class RobotPlayer {
         int x = a.x, y = a.y;
         int dx = b.x - a.x;
         int dy = b.y - a.y;
-        int sx = (int) Math.signum(dx);
-        int sy = (int) Math.signum(dy);
+        int sx = Integer.signum(dx);
+        int sy = Integer.signum(dy);
 
         dx = Math.abs(dx);
         dy = Math.abs(dy);
 
-        int d = Math.max(dx, dy);
-        int r = d / 2;
-        if (dx > dy) {
-            for (int i = 0; i < d; i++) {
-                locs.add(new MapLocation(x, y));
+        int err = dx - dy;
+        while (true) {
+            locs.add(new MapLocation(x, y));
+
+            if (x == b.x && y == b.y) break;
+
+            int e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
                 x += sx;
-                r += dy;
-                if (r >= dx) {
-                    locs.add(new MapLocation(x, y));
-                    y += sy;
-                    r -= dx;
-                }
             }
-        } else {
-            for (int i = 0; i < d; i++) {
-                locs.add(new MapLocation(x, y));
+            if (e2 < dx) {
+                err += dx;
                 y += sy;
-                r += dx;
-                if (r >= dy) {
-                    locs.add(new MapLocation(x, y));
-                    x += sx;
-                    r -= dy;
-                }
             }
         }
-
-        locs.add(new MapLocation(x, y));
         return locs;
     }
 
@@ -359,10 +368,5 @@ public class RobotPlayer {
         }
     }
 }
-
-
-
-
-
 
 
