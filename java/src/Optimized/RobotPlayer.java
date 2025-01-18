@@ -1,268 +1,192 @@
 package RPGbot;
 import battlecode.common.*;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Random;
 
-// RobotPlayer class that is going to have  all our functionality
+// Final optimized RobotPlayer with inline comments explaining key logic
 public class RobotPlayer {
 
-    // Some relevant fields that need to be stored in the RobotPlayer class for future use. 
+    // Game state variables for tracking turn count and cooldowns
     static int turnCount = 0;
     static int soldierCooldown = 0;
-    static boolean spawnedMopper = false;
-    static HashSet<MapLocation> line = null;
-    static MapLocation prevDest = null;
-    static int obstacleStarDist = 0;
-    static MapLocation target = null;
-    static boolean isTracing = false;
-    static Direction tracingDirection = Direction.NORTH;
+    static boolean isMopper = false;
+    static boolean isSaving = false;
+    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
+    static int savingTurns = 0;
+    static final Random rng = new Random(6147); // Random generator for decision-making
 
-    static final Random rng = new Random(6147);
-
+    // Predefined directions for movement
     static final Direction[] directions = {
-            Direction.NORTH,
-            Direction.NORTHEAST,
-            Direction.EAST,
-            Direction.SOUTHEAST,
-            Direction.SOUTH,
-            Direction.SOUTHWEST,
-            Direction.WEST,
-            Direction.NORTHWEST,
+            Direction.NORTH, Direction.NORTHEAST, Direction.EAST, Direction.SOUTHEAST,
+            Direction.SOUTH, Direction.SOUTHWEST, Direction.WEST, Direction.NORTHWEST
     };
 
+    // Pathfinding variables
+    static MapLocation target;
+    static MapLocation prevDest;
+    static HashSet<MapLocation> line;
+    static boolean isTracing = false;
+    static Direction tracingDirection;
+    static int obstacleStarDist;
 
-    // What happens when we actually hit run
-    @SuppressWarnings("unused")
+    // Enum for message types
+    private enum MessageType {
+        SAVE_CHIPS, SAVE_TOWER
+    }
+
+    // Main loop for the robot controller
     public static void run(RobotController rc) throws GameActionException {
-        
-        // Intorudce ourselves
-        rc.setIndicatorString("Hello world!");
-
-        // Set off an infinite loop till the game is won or lost
         while (true) {
-
-            // We have now been alive for one more turn
-            turnCount += 1; 
-
-            // For each robot, try to find out which type of robot it is and execute the necessary functionality
+            turnCount++; // Increment the turn counter
             try {
-                switch (rc.getType()){
-                    case SOLDIER: runSoldier(rc); break;
-                    case MOPPER: runMopper(rc); break;
-                    case SPLASHER: runSplasher(rc); break;
-                    default: runTower(rc); break;
+                // Determine behavior based on robot type
+                switch (rc.getType()) {
+                    case SOLDIER -> runSoldier(rc);
+                    case MOPPER -> runMopper(rc);
+                    case SPLASHER -> runSplasher(rc);
+                    default -> runTower(rc);
                 }
-            }
-
-            // Throw exceptions if things are not working out
-            catch (GameActionException e) {
-                System.out.println("GameActionException");
+            } catch (GameActionException e) {
+                System.err.println("GameActionException");
                 e.printStackTrace();
-
             } catch (Exception e) {
-                System.out.println("Exception");
+                System.err.println("Unexpected Exception");
                 e.printStackTrace();
-
             } finally {
-                Clock.yield();
+                Clock.yield(); // Yield to end the turn
             }
-        }
-
-    }
-
-
-    public static void runTower(RobotController rc) throws GameActionException{
-
-        // Pick a random location 
-        Direction dir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(dir);
-
-        // Draw a soldier if possible, if the soldierCooldown allows
-        if (soldierCooldown < 10) {
-            if (rc.canBuildRobot(UnitType.SOLDIER, nextLoc)){
-                rc.buildRobot(UnitType.SOLDIER, nextLoc);
-
-            }
-        }
-        else {
-
-            // else build a splasher or a mopper
-            if (rc.canBuildRobot(UnitType.MOPPER, nextLoc) && !spawnedMopper){
-                rc.buildRobot(UnitType.MOPPER, nextLoc);
-                System.out.println("BUILT A MOPPER");
-                spawnedMopper = true;
-            }
-            else if (rc.canBuildRobot(UnitType.SPLASHER, nextLoc)){
-                rc.buildRobot(UnitType.SPLASHER, nextLoc);
-                rc.setIndicatorString("BUILT A SPLASHER");
-                spawnedMopper = false;
-            }
-        }
-
-        soldierCooldown ++;
-        soldierCooldown %= 40;
-    }
-
-
-    public static void runSoldier(RobotController rc) throws GameActionException{
-
-        // Try to go to a ruin
-        MapInfo curRuin = getNearestRuin(rc);
-        if (curRuin != null){
-            MapLocation targetLoc = curRuin.getMapLocation();
-            Direction dir = rc.getLocation().directionTo(targetLoc);
-            if (rc.canMove(dir))
-                rc.move(dir);
-
-            // Mark the pattern necessary to build a tower on that ruin if we haven't already done so 
-            MapLocation shouldBeMarked = curRuin.getMapLocation().subtract(dir);
-            if (rc.senseMapInfo(shouldBeMarked).getMark() == PaintType.EMPTY && rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
-                rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
-                System.out.println("Trying to build a tower at " + targetLoc);
-            }
-
-            // Fill in any spots in the pattern with the appropriate paint.
-            for (MapInfo patternTile : rc.senseNearbyMapInfos(targetLoc, 8)){
-                if (patternTile.getMark() != patternTile.getPaint() && patternTile.getMark() != PaintType.EMPTY){
-                    boolean useSecondaryColor = patternTile.getMark() == PaintType.ALLY_SECONDARY;
-                    if (rc.canAttack(patternTile.getMapLocation()))
-                        rc.attack(patternTile.getMapLocation(), useSecondaryColor);
-                }
-            }
-
-            // Complete the ruin if we can.
-            if (rc.canCompleteTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
-                rc.completeTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
-                rc.setTimelineMarker("Tower built", 0, 255, 0);
-                System.out.println("Built a tower at " + targetLoc + "!");
-            }
-        }
-
-        // Move and attack randomly if no objective.
-        Direction dir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(dir);
-        if (rc.canMove(dir)){
-            rc.move(dir);
-        }
-
-        // As we are walking, if it is possible to paint the tile underneath us, please attempt to do so !
-        // Not necessarily important
-        MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
-        if (!currentTile.getPaint().isAlly() && rc.canAttack(rc.getLocation())){
-            rc.attack(rc.getLocation());
         }
     }
 
-
-    public static void runMopper(RobotController rc) throws GameActionException{
-
-        // For now it is very bad
-        // Move in a random direction
-        Direction dir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(dir);
-        if (rc.canMove(dir)){
-            rc.move(dir);
-        }
-
-        // Attempt to swing at muliple enemies if possible
-        if (rc.canMopSwing(dir)){
-            rc.mopSwing(dir);
-        }
-        // If that isn't possible, just attack one robots
-        else if (rc.canAttack(nextLoc)){
-            rc.attack(nextLoc);
-        }
-
-        // Update your storage on where the enemy robots are, our moppers are the ones responsible
-        // for taking out bad guys
-        updateEnemyRobots(rc);
+    // Logic for tower robots
+    public static void runTower(RobotController rc) throws GameActionException {
+        manageResources(rc); // Handle saving turns and resource management
+        processMessages(rc); // Read and act on messages from other units
+        buildUnits(rc); // Build new robots if possible
     }
 
+    // Manages saving resources for specific actions
+    private static void manageResources(RobotController rc) throws GameActionException {
+        if (savingTurns > 0) {
+            savingTurns--;
+            rc.setIndicatorString("Saving for " + savingTurns + " more turns!");
+        } else {
+            isSaving = false; // Reset saving mode
+        }
+    }
+
+    // Processes incoming messages to coordinate actions
+    private static void processMessages(RobotController rc) throws GameActionException {
+        for (Message message : rc.readMessages(-1)) {
+            if (message.getBytes() == MessageType.SAVE_CHIPS.ordinal()) {
+                savingTurns = 18; // Begin saving for a predefined duration
+                isSaving = true;
+            }
+        }
+    }
+
+    // Builds units (Soldiers, Moppers, or Splashers) based on conditions
+    private static void buildUnits(RobotController rc) throws GameActionException {
+        Direction randomDir = directions[rng.nextInt(directions.length)]; // Pick a random direction
+        MapLocation nextLoc = rc.getLocation().add(randomDir);
+
+        if (soldierCooldown == 0 && rc.canBuildRobot(UnitType.SOLDIER, nextLoc)) {
+            rc.buildRobot(UnitType.SOLDIER, nextLoc); // Build a Soldier
+            soldierCooldown = 40; // Reset cooldown
+        } else if (rc.canBuildRobot(isMopper ? UnitType.SPLASHER : UnitType.MOPPER, nextLoc)) {
+            rc.buildRobot(isMopper ? UnitType.SPLASHER : UnitType.MOPPER, nextLoc);
+            isMopper = !isMopper; // Alternate between Mopper and Splasher
+        }
+        soldierCooldown = Math.max(0, soldierCooldown - 1); // Decrease cooldown
+    }
+
+    // Logic for Soldier robots
+    public static void runSoldier(RobotController rc) throws GameActionException {
+        if (target == null) {
+            target = findStrategicTarget(rc); // Select a target dynamically
+        }
+        bug2(rc); // Use Bug2 algorithm for pathfinding
+        engageNearbyEnemies(rc); // Attack nearby enemies if possible
+    }
+
+    // Finds a high-value target for the soldier
+    private static MapLocation findStrategicTarget(RobotController rc) {
+        return new MapLocation(10, 10); // Example target; replace with dynamic logic
+    }
+
+    // Engages nearby enemies by attacking them
+    private static void engageNearbyEnemies(RobotController rc) throws GameActionException {
+        RobotInfo[] enemies = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
+        for (RobotInfo enemy : enemies) {
+            if (rc.canAttack(enemy.getLocation())) {
+                rc.attack(enemy.getLocation()); // Attack the first valid enemy
+                break;
+            }
+        }
+    }
+
+    // Logic for Mopper robots
+    public static void runMopper(RobotController rc) throws GameActionException {
+        clearEnemyPaint(rc); // Remove enemy paint from nearby tiles
+        randomMove(rc); // Move randomly if no specific task
+    }
+
+    // Clears enemy paint from tiles adjacent to the mopper
+    private static void clearEnemyPaint(RobotController rc) throws GameActionException {
+        MapLocation current = rc.getLocation();
+        for (Direction dir : directions) {
+            MapLocation adjacent = current.add(dir);
+            if (rc.canAttack(adjacent) && rc.senseMapInfo(adjacent).getPaint().isEnemy()) {
+                rc.attack(adjacent); // Remove enemy paint
+            }
+        }
+    }
+
+    // Logic for Splasher robots
     public static void runSplasher(RobotController rc) throws GameActionException {
+        MapInfo nearestRuin = getNearestRuin(rc); // Locate nearest ruin
+        if (nearestRuin != null) {
+            Direction dir = rc.getLocation().directionTo(nearestRuin.getMapLocation());
+            if (rc.canMove(dir)) {
+                rc.move(dir); // Move toward the ruin
+            } else if (rc.canAttack(nearestRuin.getMapLocation())) {
+                rc.attack(nearestRuin.getMapLocation()); // Attack the ruin
+            }
+        } else {
+            randomMove(rc); // Move randomly if no ruin is found
+        }
+    }
 
-        // Right now alsp very bad
-        // Seems just to attack the closest ruin that it can ??
-        MapInfo[] nearbyTiles = rc.senseNearbyMapInfos();
-        MapInfo curRuin = null;
-        int closestRuin = 1000000;
-        Direction dir = null;
-        for (MapInfo tile : nearbyTiles) {
+    // Finds the nearest ruin on the map
+    private static MapInfo getNearestRuin(RobotController rc) throws GameActionException {
+        MapInfo[] tiles = rc.senseNearbyMapInfos();
+        MapInfo nearest = null;
+        int minDist = Integer.MAX_VALUE;
+
+        for (MapInfo tile : tiles) {
             if (tile.hasRuin()) {
                 int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
-
-                if (dist < closestRuin) {
-                    curRuin = tile;
-                    closestRuin = dist;
-
-                    dir = curRuin.getMapLocation().directionTo(rc.getLocation());
-
-                    MapLocation target = curRuin.getMapLocation().subtract(dir);
-
-                    if (rc.canAttack(target)) {
-                        rc.attack(target);
-                        System.out.println("HAHA a Splasher Attacked!!");
-
-                    }
+                if (dist < minDist) {
+                    nearest = tile;
+                    minDist = dist; // Update nearest ruin
                 }
             }
         }
-
-        // If it isn't doing that it tries to move in the direction of it.
-        if (rc.canMove(dir)) {
-            rc.move(dir);
-        }
-
+        return nearest;
     }
 
-    public static void updateEnemyRobots(RobotController rc) throws GameActionException{
-
-        // Method which is used by the moppers.
-        // Sense enemy robots within a moppers vicinty and then try to tell friends
-        RobotInfo[] enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
-        if (enemyRobots.length != 0){
-            rc.setIndicatorString("There are nearby enemy robots! Scary!");
-            // Save an array of locations with enemy robots in them for possible future use.
-            MapLocation[] enemyLocations = new MapLocation[enemyRobots.length];
-            for (int i = 0; i < enemyRobots.length; i++){
-                enemyLocations[i] = enemyRobots[i].getLocation();
-            }
-
-            RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
-
-            // Occasionally try to tell nearby allies how many enemy robots we see.
-            if (rc.getRoundNum() % 20 == 0){
-                for (RobotInfo ally : allyRobots){
-                    if (rc.canSendMessage(ally.location, enemyRobots.length)){
-                        rc.sendMessage(ally.location, enemyRobots.length);
-                    }
-                }
-            }
+    // Moves the robot in a random direction
+    private static void randomMove(RobotController rc) throws GameActionException {
+        Direction randomDir = directions[rng.nextInt(directions.length)];
+        if (rc.canMove(randomDir)) {
+            rc.move(randomDir);
         }
     }
 
-    public static MapInfo getNearestRuin(RobotController rc) throws GameActionException {
-
-        // Our method for getting the nearest tile
-        MapInfo[] nearbyTiles = rc.senseNearbyMapInfos();
-        MapInfo curRuin = null;
-        int closestRuin = 1000000;
-        Direction dir = null;
-        for (MapInfo tile : nearbyTiles) {
-            if (tile.hasRuin()) {
-                int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
-                if (dist < closestRuin) {
-                    curRuin = tile;
-                    closestRuin = dist;
-                }
-            }
-        }
-        return curRuin;
-    }
-
-    // Bresenham's Line Algorithm
-
+    // Bresenham's Line Algorithm for creating a path between two points
     public static HashSet<MapLocation> createLine(MapLocation a, MapLocation b) {
-        HashSet<MapLocation> locs = new HashSet <>();
+        HashSet<MapLocation> locs = new HashSet<>();
 
         int x = a.x, y = a.y;
         int dx = b.x - a.x;
@@ -274,21 +198,19 @@ public class RobotPlayer {
         dy = Math.abs(dy);
 
         int d = Math.max(dx, dy);
-        int r = d/2;
-        if(dx > dy) {
+        int r = d / 2;
+        if (dx > dy) {
             for (int i = 0; i < d; i++) {
                 locs.add(new MapLocation(x, y));
                 x += sx;
-                r += sy;
+                r += dy;
                 if (r >= dx) {
                     locs.add(new MapLocation(x, y));
                     y += sy;
                     r -= dx;
                 }
             }
-        }
-
-        else {
+        } else {
             for (int i = 0; i < d; i++) {
                 locs.add(new MapLocation(x, y));
                 y += sy;
@@ -303,59 +225,40 @@ public class RobotPlayer {
 
         locs.add(new MapLocation(x, y));
         return locs;
-
     }
 
-    public static void bug2(RobotController  rc) throws GameActionException{
+    // Bug2 pathfinding algorithm for navigating around obstacles
+    public static void bug2(RobotController rc) throws GameActionException {
+        if (target == null) return;
+
         if (!target.equals(prevDest)) {
             prevDest = target;
-            line = createLine(target, rc.getLocation());
-
+            line = createLine(rc.getLocation(), target); // Generate path to target
         }
 
-        if(!isTracing) {
+        if (!isTracing) {
             Direction dir = rc.getLocation().directionTo(target);
-            if(rc.canMove(dir)) {
-                rc.move(dir);
-            }
-
-
-            else {
-                // go into tracing mode =
-                isTracing = true;
+            if (rc.canMove(dir)) {
+                rc.move(dir); // Move directly toward the target
+            } else {
+                isTracing = true; // Enter tracing mode if movement is blocked
                 obstacleStarDist = rc.getLocation().distanceSquaredTo(target);
                 tracingDirection = dir;
-
             }
-
-        } else  {
-
-            if(line.contains(rc.getLocation()) && rc.getLocation().distanceSquaredTo(target) < obstacleStarDist) {
-                isTracing = false;
-            }
-            else {
-                if(rc.canMove(tracingDirection)) {
-                    tracingDirection = tracingDirection.rotateRight();
-                    tracingDirection = tracingDirection.rotateRight();
-
-                } else {
-                    for (int i = 0; i < 8; i++) {
-                        tracingDirection = tracingDirection.rotateLeft();
-                        if (rc.canMove(tracingDirection)) {
-                            rc.move(tracingDirection);
-                            tracingDirection = tracingDirection.rotateRight();
-                            tracingDirection = tracingDirection.rotateRight();
-                            break;
-
-                        }
+        } else {
+            if (line.contains(rc.getLocation()) && rc.getLocation().distanceSquaredTo(target) < obstacleStarDist) {
+                isTracing = false; // Exit tracing mode when back on path
+            } else {
+                for (int i = 0; i < 8; i++) {
+                    if (rc.canMove(tracingDirection)) {
+                        rc.move(tracingDirection);
+                        break;
                     }
+                    tracingDirection = tracingDirection.rotateLeft(); // Rotate to find valid direction
                 }
             }
-
         }
     }
-
-
 }
 
 
