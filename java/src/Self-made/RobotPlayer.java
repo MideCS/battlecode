@@ -2,63 +2,68 @@ package RPGbot;
 
 import battlecode.common.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 
 
-
-import apple.laf.JRSUIConstants.Direction;
 
 public class RobotPlayer {
 
+    // Game State variables 
     static int turnCount = 0;
+    static boolean isSaving = false;
+    static int savingTurns = 0;
+    static int savingCooldown = 0;
+
+    private enum SavingAction {
+        NONE, SAVE_CHIPS, UPGRADE_TOWER
+    }
+
+    static SavingAction lastSavingAction = SavingAction.NONE;
+    static HashSet<MapLocation> exploredRuins = new HashSet<>();
+    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
 
     static final Random rng = new Random(6147);
 
     static final Direction[] directions = {
-        Direction.NORTH,
-        Direction.NORTHEAST,
-        Direction.EAST,
-        Direction.SOUTHEAST,
-        Direction.SOUTH,
-        Direction.SOUTHWEST,
-        Direction.WEST,
-        Direction.NORTHWEST,
+        Direction.NORTH, Direction.NORTHEAST, Direction.EAST, Direction.SOUTHEAST,
+        Direction.SOUTH, Direction.SOUTHWEST, Direction.WEST, Direction.NORTHWEST,
     };
+
+    // UNit rations for production
+    static final double SOLDIER_RATIO = 0.5; // 50% Soldiers
+    static final double MOPPER_RATIO = 0.3; // 30% Moppers
+    static final double SPLASHER_RATIO = 0.2; // 20% Splashers
+    static int soldierCount = 0;
+    static int mopperCount = 0;
+    static int splasherCount = 0;
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
-        // Hello world! Standard output is very useful for debugging.
-        // Everything you say here will be directly viewable in your terminal when you run a match!
-        System.out.println("I'm alive");
-
-        rc.setIndicatorString("Hello world!");
+    
 
         while (true) {
-
-
-            turnCount += 1;  // We have now been alive for one more turn!
-
+            turnCount ++;  // Increment the turn counter 
             try {
                 switch (rc.getType()){
-                    case SOLDIER: runSoldier(rc); break; 
-                    case MOPPER: runMopper(rc); break;
-                    case SPLASHER: break; // Consider upgrading examplefuncsplayer to use splashers!
-                    default: runTower(rc); break;
+                    case SOLDIER -> runSoldier(rc); break; 
+                    case MOPPER -> runMopper(rc); break;
+                    case SPLASHER -> break; 
+                    default -> runTower(rc); break;
                     }
                 }
              catch (GameActionException e) {
                 System.out.println("GameActionException");
                 e.printStackTrace();
-
             } catch (Exception e) {
                 System.out.println("Exception");
                 e.printStackTrace();
-
             } finally {
                 Clock.yield();
             }
@@ -66,6 +71,60 @@ public class RobotPlayer {
 
     }
 
+    private static void manageResources(RobotController rc) throws GameActionException {
+
+        // Decrement saving turns until we reach zero, then initiate the cooldown period
+        if (savingTurns > 0) {
+            savingTurns --;
+
+            if (savingTurns == 0) {
+                switch (lastSavingAction) {
+                    case SAVE_CHIPS:
+                        savingCooldown = 20; break;
+                    case UPGRADE_TOWER;
+                        savingCooldown = 30; break;
+                    default:
+                        savingCooldown = 0; break;
+                }
+                lastSavingAction = SavingAction.NONE
+            }
+        } else if (savingCooldown > 0) {
+        savingCooldown--;
+        } else {
+        isSaving = false;
+        }
+    }
+
+    private static void processMessages(RobotController rc) throws GameActionException {
+        // TO be completed
+    }
+
+    private static void buildUnits(RobotController rc) throws GameActionException {
+        if (isSaving) {
+            return; // Do not produce units while saving
+        }
+
+        int totalProduced = soldierCount + mopperCount + splasherCount;
+        double soldierFraction = totalProduced > 0 ? (double) soldierCount / totalProduced : 0; // Avoid division by zero 
+        double mopperFraction = totalProduced > 0 ? (double) mopperCount / totalProduced : 0;
+        double splasherFraction = totalProduced > 0 ? (double) splasherCount / totalProduced : 0;
+
+        UnitType nextUnit = null;
+        if (soldierFraction < SOLDIER_RATIO) {
+            nextUnit = UnitType.SOLDIER;
+        } else if (mopperFraction < MOPPER_RATIO) {
+            nextUnit = UnitType.MOPPER;
+        } else if (splasherFraction < SPLASHER_RATIO) {
+            nextUnit = UnitType.SPLASHER;
+        }
+
+        // Build two robots in random directions
+        Direction dir1 = directions[rng.nextInt(directions.length)];
+        Direction dir2 = directions[rng.nextInt(directions.length)];
+        MapLocation nextLoc1 = rc.getLocation().add(dir);
+        MapLocation nextLoc2 = rc.getLocation().add(dir);
+
+    }   
 
     public static void runTower(RobotController rc) throws GameActionException{
 
