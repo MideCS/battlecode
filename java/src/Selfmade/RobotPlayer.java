@@ -1,6 +1,7 @@
 package Selfmade;
 
 import battlecode.common.*;
+import scala.Unit;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -19,6 +20,7 @@ public class RobotPlayer {
     static boolean isSaving = false;
     static int savingTurns = 0;
     static int savingCooldown = 0;
+    static UnitType nextUnit = null;
 
     // Track issues related to saving
     private enum SavingAction {
@@ -36,7 +38,7 @@ public class RobotPlayer {
     // Tracking other important stuff
     static HashSet<MapLocation> exploredRuins = new HashSet<>();
     static HashSet<MapLocation> exploredTiles = new HashSet<>();
-    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
+    static HashSet<MapLocation> knownTowers = new HashSet<>();
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
@@ -66,24 +68,24 @@ public class RobotPlayer {
 
     private static void manageResources(RobotController rc) throws GameActionException {
 
+//        System.out.println("Manage Resources - Saving Action: " + lastSavingAction);
         // Decrement saving turns until we reach zero, then initiate the cooldown period
         if (savingTurns > 0) {
             savingTurns--;
-
-            if (savingTurns == 0) {
-                switch (lastSavingAction) {
-                    case SAVE_CHIPS:
-                        savingCooldown = 20; break;
-                    case UPGRADE_TOWER:
-                        savingCooldown = 30; break;
-                    default:
-                        savingCooldown = 0; break;
-                }
-                lastSavingAction = SavingAction.NONE;
+        }
+        else if (savingTurns == 0) {
+            switch (lastSavingAction) {
+                case SAVE_CHIPS:
+                    savingCooldown = 20; break;
+                case UPGRADE_TOWER:
+                    savingCooldown = 30; break;
+                default:
+                    savingCooldown = 0; break;
             }
-        } else if (savingCooldown > 0) {
-            savingCooldown--;
-        } else {
+            lastSavingAction = SavingAction.NONE;
+        }
+
+         else {
             isSaving = false;
         }
     }
@@ -103,6 +105,15 @@ public class RobotPlayer {
     }
 
     private static void buildUnits(RobotController rc) throws GameActionException {
+//        System.out.println("Building units - is Saving: " + isSaving);
+
+        // TODO: Bots generate slowly. Below is brute force Soldier Spawning.
+//        Direction dir = directions[rng.nextInt(directions.length)];
+//        MapLocation loc = rc.getLocation().add(dir);
+//        if (rc.canBuildRobot(UnitType.SOLDIER, loc)) {
+//            rc.buildRobot(UnitType.SOLDIER, loc);
+//        }
+
         if (isSaving) {
             return; // Do not produce units while saving
         }
@@ -113,24 +124,34 @@ public class RobotPlayer {
         MapLocation buildLoc1 = rc.getLocation().add(dir1);
         MapLocation buildLoc2 = rc.getLocation().add(dir2);
 
-        UnitType nextUnit = null;
-        int robotType = rng.nextInt(5);
-        if (robotType == 0 || robotType == 1 || robotType == 2) {
-            nextUnit = UnitType.SOLDIER;
-        } else if (robotType == 4) {
-            nextUnit = UnitType.MOPPER;
-        } else if (robotType == 5) {
-            nextUnit = UnitType.SPLASHER;
+        // Selects a random unit with a non-uniform distribution
+        if (nextUnit == null) {
+            int robotType = rng.nextInt(4);
+            if (robotType == 0 || robotType == 1 || robotType == 2 || robotType == 3) {
+                nextUnit = UnitType.SOLDIER;
+            } else if (robotType == 4 || robotType == 5) {
+                nextUnit = UnitType.MOPPER;
+            } else {
+                nextUnit = UnitType.SPLASHER;
+            }
         }
 
-        if (nextUnit != null) {
-            if (rc.canBuildRobot(nextUnit, buildLoc1)) {
-                rc.buildRobot(nextUnit, buildLoc1);
-            }
-            if (rc.canBuildRobot(nextUnit, buildLoc2)) {
-                rc.buildRobot(nextUnit, buildLoc2);
-            }
+
+        // Makes sure that selected unit is spawned, otherwise waits until next time it can spawn.
+        if (rc.canBuildRobot(nextUnit, buildLoc1)) {
+            rc.buildRobot(nextUnit, buildLoc1);
+            nextUnit = null;
         }
+        else if (rc.canBuildRobot(nextUnit, buildLoc2)) {
+            rc.buildRobot(nextUnit, buildLoc2);
+            nextUnit = null;
+        }
+
+        /* Richard wanted this to spawn 2 at once, but the previous implementation
+        only spawned Moppers because they were cheapest and had the highest chance of passing canBuildRobot.
+        This implementation fixes that, but does not spawn two at once. This would require a bit more reworking
+        which we can do if needed.
+         */
 
     }   
 
@@ -140,15 +161,6 @@ public class RobotPlayer {
         buildUnits(rc);
     }
 
-    private static void randomMove(RobotController rc) throws GameActionException {
-        Direction randomDir = directions[rng.nextInt(directions.length)];
-        if (rc.canMove(randomDir)){
-            rc.move(randomDir);
-            System.out.println("Moved to " + rc.getLocation().add(randomDir));
-        } else {
-            System.out.println("Failed to move in direction: " + randomDir);
-        }
-    }
 
     private static void paintCurrentTile(RobotController rc) throws GameActionException {
         MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
@@ -164,20 +176,25 @@ public class RobotPlayer {
         int minDist = Integer.MAX_VALUE;
 
         for (MapInfo tile : tiles) {
-            if (tile.hasRuin() && !exploredRuins.contains(tile.getMapLocation())) {
-                int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
+            MapLocation tileLoc = tile.getMapLocation();
+            if (tile.hasRuin() && !knownTowers.contains(tileLoc) && !exploredRuins.contains(tileLoc)) {
+                int dist = rc.getLocation().distanceSquaredTo(tileLoc);
                 if (dist < minDist) {
-                    nearestRuin = tile.getMapLocation();
+                    nearestRuin = tileLoc;
                     minDist = dist;
                 }
             }
         }
+        if (nearestRuin != null) {
+            System.out.println("Found Nearest ruin: " + nearestRuin);
+        }
         return nearestRuin;
     }
 
-    // This function will run a more effective search for important tiles by restricting movement to previously checked tiles.
-    private static void explore(RobotController rc, Direction dir) throws GameActionException {
+    // This function will run a more effective search for important tiles by restricting movement to previously unchecked tiles.
+    private static void explore(RobotController rc) throws GameActionException {
 
+        Direction dir = directions[rng.nextInt(directions.length)];
         MapLocation randomLoc = rc.getLocation().add(dir);
         // TODO: Function to explore more effectively.
         MapLocation nextLoc = rc.getLocation().add(dir);
@@ -196,6 +213,29 @@ public class RobotPlayer {
         // This function could also scan area/nearby tiles, and if it finds one it hasn't checked, it should go there.
     }
 
+    // Finds the nearest unpainted tile to a given location.
+    private static MapLocation findNearestUnpaintedTile(RobotController rc, MapLocation loc) throws GameActionException {
+        MapInfo[] tiles = rc.senseNearbyMapInfos();
+
+        int minDist = Integer.MAX_VALUE;
+        MapLocation nearestUnpaintedTile = null;
+
+        for (MapInfo tile : tiles) {
+            if (tile.getPaint() != PaintType.EMPTY) continue;
+            if (tile.hasRuin()) continue;
+            if (tile.isWall()) continue;
+
+            MapLocation tileLoc = tile.getMapLocation();
+            int distToLoc = loc.distanceSquaredTo(tileLoc);
+            if (distToLoc < minDist && loc != tileLoc) {
+                minDist = loc.distanceSquaredTo(tileLoc);
+                nearestUnpaintedTile = tileLoc;
+            }
+        }
+        if (nearestUnpaintedTile == null) return loc;
+        return nearestUnpaintedTile;
+    }
+
 
     // This function definitely has some bugs
     private static void sendMessengerToNotify(RobotController rc) throws GameActionException {
@@ -211,29 +251,33 @@ public class RobotPlayer {
 
     // the build ruin thing could definitely be modularized a lot more.
     public static void runSoldier(RobotController rc) throws GameActionException{
+        paintCurrentTile(rc);
+        updateTowerLocations(rc);
+        // Current Issue: Found a Ruin, but does not want to paint around. Keeps finding "closest ruin".
 
         // Search for a nearby ruin to complete.
         MapLocation curRuin = findNearestUnexploredRuin(rc);
 
+
+
         if (curRuin != null){
-            MapLocation targetLoc = curRuin;
-            Direction dir = rc.getLocation().directionTo(targetLoc);
+            MapLocation unpaintedTile = findNearestUnpaintedTile(rc, curRuin);
+            Direction dir = rc.getLocation().directionTo(unpaintedTile);
             if (rc.canMove(dir))
                 rc.move(dir);
-            else
-                System.out.println("Cannot move towards " + dir);
+            else System.out.println("Cannot move towards " + dir);
 
             // Mark the pattern we need to draw to build a tower here if we haven't already.
             // Note: MapLocation does not have a subtract method. Instead, calculate the location manually.
-            MapLocation shouldBeMarked = new MapLocation(targetLoc.x - dir.dx, targetLoc.y - dir.dy);
+            MapLocation shouldBeMarked = new MapLocation(unpaintedTile.x - dir.dx, unpaintedTile.y - dir.dy);
             MapInfo markTile = rc.senseMapInfo(shouldBeMarked);
-            if (markTile.getMark() == PaintType.EMPTY && rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
-                rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
-                System.out.println("Marked tower pattern at " + targetLoc);
+            if (markTile.getMark() == PaintType.EMPTY && rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin)){
+                rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin);
+                System.out.println("Marked tower pattern at " + curRuin);
             }
 
             // Fill in any spots in the pattern with the appropriate paint.
-            MapInfo[] nearbyTiles = rc.senseNearbyMapInfos(targetLoc, 8);
+            MapInfo[] nearbyTiles = rc.senseNearbyMapInfos(curRuin, 8);
             for (MapInfo patternTile : nearbyTiles){
                 if (patternTile.getMark() != patternTile.getPaint() && patternTile.getMark() != PaintType.EMPTY){
                     boolean useSecondaryColor = patternTile.getMark() == PaintType.ALLY_SECONDARY;
@@ -243,35 +287,43 @@ public class RobotPlayer {
             }
 
             // Complete the ruin if we can.
-            if (rc.canCompleteTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
-                rc.completeTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
+            if (rc.canCompleteTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin)){
+                rc.completeTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin);
                 rc.setTimelineMarker("Tower built", 0, 255, 0);
                 // if we complete the ruin, let's add it to the list of explored ruins.
-                exploredRuins.add(targetLoc);
+                exploredRuins.add(curRuin);
+                knownTowers.add(curRuin); // This might need some work.
 
-                System.out.println("Built a tower at " + targetLoc + "!");
+                System.out.println("Built a tower at " + curRuin + "!");
             }
         }
 
         // Move and attack randomly if no objective.
-        else {
-            Direction dir = directions[rng.nextInt(directions.length)];
-            explore(rc, dir);
-        }
-
+        explore(rc);
         // Try to paint beneath us as we walk to avoid paint penalties.
-        paintCurrentTile(rc);
     }
 
     
     public static void runMopper(RobotController rc) throws GameActionException{
-        Direction dir = directions[rng.nextInt(directions.length)];
-        explore(rc, dir);
+        explore(rc);
+
     }
 
     public static void runSplasher(RobotController rc) throws GameActionException {
-        Direction dir = directions[rng.nextInt(directions.length)];
-        explore(rc, dir);
+        explore(rc);
+    }
+
+    private static void updateTowerLocations(RobotController rc) throws GameActionException {
+        RobotInfo[] allies = rc.senseNearbyRobots(-1, rc.getTeam());
+        for (RobotInfo ally : allies) {
+            if (!ally.getType().isTowerType()) continue;
+
+            MapLocation allyLoc = ally.getLocation();
+
+            if (knownTowers.contains(allyLoc)) continue;
+            knownTowers.add(allyLoc);
+
+        }
     }
 
     // Methods that don't do anything yet but that could be changed.
