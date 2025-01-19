@@ -288,7 +288,7 @@ public class RobotPlayer {
 
 
 
-    public static updateEnemyRobots(RobotController rc) throws GameActionException{
+    public static ArrayList<RobotInfo>updateEnemyRobots(RobotController rc) throws GameActionException{
         
         // Sensing methods can be passed in a radius of -1 to automatically use the largest possible value.
         RobotInfo[] enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
