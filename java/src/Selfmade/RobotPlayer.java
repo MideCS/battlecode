@@ -3,7 +3,6 @@ package Selfmade;
 import battlecode.common.*;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Random;
 
@@ -13,6 +12,8 @@ import java.util.Random;
  */
 public class RobotPlayer {
 
+    // Address Communication
+    // Attacking enemy
     // Game State variables 
     static int turnCount = 0;
     static boolean isSaving = false;
@@ -34,6 +35,7 @@ public class RobotPlayer {
 
     // Tracking other important stuff
     static HashSet<MapLocation> exploredRuins = new HashSet<>();
+    static HashSet<MapLocation> exploredTiles = new HashSet<>();
     static ArrayList<MapLocation> knownTowers = new ArrayList<>();
 
     @SuppressWarnings("unused")
@@ -88,11 +90,11 @@ public class RobotPlayer {
 
     private static void processMessages(RobotController rc) throws GameActionException {
         for (Message message: rc.readMessages(-1)) {
-            if (message.getBytes() == MessageType.SAVE_CHIPS.ordinal()){
+            if (message.getBytes() == SavingAction.SAVE_CHIPS.ordinal()){
                 savingTurns = 20;
                 isSaving = true;
                 lastSavingAction = SavingAction.SAVE_CHIPS;
-            } else if (message.getBytes() == MessageType.UPGRADE_TOWER.ordinal()){
+            } else if (message.getBytes() == SavingAction.UPGRADE_TOWER.ordinal()){
                 savingTurns = 30;
                 isSaving = true;
                 lastSavingAction = SavingAction.UPGRADE_TOWER;
@@ -173,19 +175,41 @@ public class RobotPlayer {
         return nearestRuin;
     }
 
+    // This function will run a more effective search for important tiles by restricting movement to previously checked tiles.
+    private static void explore(RobotController rc, Direction dir) throws GameActionException {
+
+        MapLocation randomLoc = rc.getLocation().add(dir);
+        // TODO: Function to explore more effectively.
+        MapLocation nextLoc = rc.getLocation().add(dir);
+        if (rc.canMove(dir) && !exploredTiles.contains(randomLoc)){
+            rc.move(dir);
+            exploredTiles.add(randomLoc);
+            System.out.println("Moved randomly to " + randomLoc);
+        }
+
+        // If no new location to move to, then move to random location if canMove.
+        else if (rc.canMove(dir)) {
+            rc.move(dir);
+//            System.out.println("Failed to move randomly towards " + dir);
+        }
+
+        // This function could also scan area/nearby tiles, and if it finds one it hasn't checked, it should go there.
+    }
+
+
     // This function definitely has some bugs
     private static void sendMessengerToNotify(RobotController rc) throws GameActionException {
         RobotInfo [] friendlyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
         for (RobotInfo robot : friendlyRobots) {
-            if (robot.getType() == UnitType.MOPPER && rc.canSendMessage(robot.getLocation())) {
-                rc.setIndicatorDot(0, 255, 0); // Only going to send one Mopper back,
-                rc.sendMessage(robot.getLocation(), MessageType.SAVE_CHIPS.ordinal());
+            if (robot.getType() == UnitType.MOPPER && rc.canSendMessage(robot.getLocation(), SavingAction.SAVE_CHIPS.ordinal())) {
+                rc.setIndicatorDot(robot.getLocation(), 0, 255, 0); // Only going to send one Mopper back,
+                rc.sendMessage(robot.getLocation(), SavingAction.SAVE_CHIPS.ordinal());
                 break;
             }
         }
     }
 
-    // the build ruin thing could definitley be modularized a lot more.
+    // the build ruin thing could definitely be modularized a lot more.
     public static void runSoldier(RobotController rc) throws GameActionException{
 
         // Search for a nearby ruin to complete.
@@ -230,13 +254,9 @@ public class RobotPlayer {
         }
 
         // Move and attack randomly if no objective.
-        Direction randomDir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(randomDir);
-        if (rc.canMove(randomDir)){
-            rc.move(randomDir);
-            System.out.println("Moved randomly to " + rc.getLocation().add(randomDir));
-        } else {
-            System.out.println("Failed to move randomly towards " + randomDir);
+        else {
+            Direction dir = directions[rng.nextInt(directions.length)];
+            explore(rc, dir);
         }
 
         // Try to paint beneath us as we walk to avoid paint penalties.
@@ -245,11 +265,13 @@ public class RobotPlayer {
 
     
     public static void runMopper(RobotController rc) throws GameActionException{
-        randomMove(rc);
+        Direction dir = directions[rng.nextInt(directions.length)];
+        explore(rc, dir);
     }
 
     public static void runSplasher(RobotController rc) throws GameActionException {
-        randomMove(rc);
+        Direction dir = directions[rng.nextInt(directions.length)];
+        explore(rc, dir);
     }
 
     // Methods that don't do anything yet but that could be changed.
