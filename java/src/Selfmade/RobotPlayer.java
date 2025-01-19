@@ -1,4 +1,4 @@
-package RPGbot;
+package Selfmade;
 
 import battlecode.common.*;
 
@@ -9,8 +9,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-
 
 
 public class RobotPlayer {
@@ -21,28 +19,31 @@ public class RobotPlayer {
     static int savingTurns = 0;
     static int savingCooldown = 0;
 
+    // Track issues to do with saving
     private enum SavingAction {
         NONE, SAVE_CHIPS, UPGRADE_TOWER
     }
-
     static SavingAction lastSavingAction = SavingAction.NONE;
-    static HashSet<MapLocation> exploredRuins = new HashSet<>();
-    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
 
+    // The random seed and the stored directions
     static final Random rng = new Random(6147);
-
     static final Direction[] directions = {
         Direction.NORTH, Direction.NORTHEAST, Direction.EAST, Direction.SOUTHEAST,
         Direction.SOUTH, Direction.SOUTHWEST, Direction.WEST, Direction.NORTHWEST,
     };
 
-    // UNit rations for production
+    // Unit rations for production
     static final double SOLDIER_RATIO = 0.5; // 50% Soldiers
     static final double MOPPER_RATIO = 0.3; // 30% Moppers
     static final double SPLASHER_RATIO = 0.2; // 20% Splashers
     static int soldierCount = 0;
     static int mopperCount = 0;
     static int splasherCount = 0;
+
+    // Tracking other important stuff
+    // static ArrayList<RobotInfo> enemyRobots = new ArrayList<>();
+    static HashSet<MapLocation> exploredRuins = new HashSet<>();
+    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
@@ -52,10 +53,10 @@ public class RobotPlayer {
             turnCount ++;  // Increment the turn counter 
             try {
                 switch (rc.getType()){
-                    case SOLDIER -> runSoldier(rc); break; 
-                    case MOPPER -> runMopper(rc); break;
-                    case SPLASHER -> break; 
-                    default -> runTower(rc); break;
+                    case SOLDIER: runSoldier(rc); break; 
+                    case MOPPER: runMopper(rc); break;
+                    case SPLASHER: runSplasher(rc); break; 
+                    default: runTower(rc); break;
                     }
                 }
              catch (GameActionException e) {
@@ -81,12 +82,12 @@ public class RobotPlayer {
                 switch (lastSavingAction) {
                     case SAVE_CHIPS:
                         savingCooldown = 20; break;
-                    case UPGRADE_TOWER;
+                    case UPGRADE_TOWER:
                         savingCooldown = 30; break;
                     default:
                         savingCooldown = 0; break;
                 }
-                lastSavingAction = SavingAction.NONE
+                lastSavingAction = SavingAction.NONE;
             }
         } else if (savingCooldown > 0) {
         savingCooldown--;
@@ -96,7 +97,21 @@ public class RobotPlayer {
     }
 
     private static void processMessages(RobotController rc) throws GameActionException {
-        // TO be completed
+        // To be completed
+        // Read incoming messages
+        Message[] messages = rc.readMessages(-1);
+        for (Message m : messages) {
+            System.out.println("Tower received message: '#" + m.getSenderID() + " " + m.getBytes());
+        }
+    }
+
+    private static vouid incrementUnitCount(UnitType unitType) {
+        switch(unitType) {
+            case SOLDIER -> soldierCount++;
+            case MOPPER -> mopperCount++;
+            case SPLASHER -> splasherCount++;
+            default -> {}
+        }
     }
 
     private static void buildUnits(RobotController rc) throws GameActionException {
@@ -121,52 +136,66 @@ public class RobotPlayer {
         // Build two robots in random directions
         Direction dir1 = directions[rng.nextInt(directions.length)];
         Direction dir2 = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc1 = rc.getLocation().add(dir);
-        MapLocation nextLoc2 = rc.getLocation().add(dir);
+        MapLocation buildLoc1 = rc.getLocation().add(dir);
+        MapLocation buildLoc2 = rc.getLocation().add(dir);
+
+        if (nextUnit != null) {
+            if (rc.canBuildRobot(nextUnit, buildLoc1)) {
+                rc.buildRobot(nextUnit, buildLoc1);
+                incrementUnitCount(nextUnit);
+            }
+            if (rc.canBuildRobot(nextUnit, buildLoc2)) {
+                rc.buildRobot(nextUnit, buildLoc2);
+                incrementUnitCount(nextUnit);
+            }
+        }
 
     }   
 
     public static void runTower(RobotController rc) throws GameActionException{
+        manageResources(rc);
+        processMessages(rc);
+        buildUnits(rc);
+    }
 
-        Direction dir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(dir);
-
-        int robotType = rng.nextInt(3);
-        if (robotType == 0 && rc.canBuildRobot(UnitType.SOLDIER, nextLoc)){
-            rc.buildRobot(UnitType.SOLDIER, nextLoc);
-            System.out.println("BUILT A SOLDIER");
+    private static void randomMove(RobotController rc) throws GameActionException {
+        Direction randomDir = directions[rng.nextInt(directions.length)];
+        if (rc.canMove(randomDir)){
+            rc.move(randomDir);
         }
-        else if (robotType == 1 && rc.canBuildRobot(UnitType.MOPPER, nextLoc)){
-            rc.buildRobot(UnitType.MOPPER, nextLoc);
-            System.out.println("BUILT A MOPPER");
+    }
+
+    private static void paintCurrentTile(RobotContoller rc) throws GameActionException {
+        MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
+        if (!currentTile.getPaint().isAlly() && rc.canAttack(rc.getLocation())) {
+            rc.attack(rc.getLocation()); 
         }
-        else if (robotType == 2 && rc.canBuildRobot(UnitType.SPLASHER, nextLoc)){
+    }
 
+    private static MapLocation findNearestUnexploredRuin(RobotController rc) throws GameActionException {
+        MapInfo[] tiles = rc.senseNearbyMapInfos();
+        MapLocation nearestRuin = null;
+        int minDist = Integer.MAX_VALUE;
 
-            rc.setIndicatorString("SPLASHER NOT IMPLEMENTED YET");
+        for (MapInfo tile : tiles) {
+            if (tile.hasRuin() && !exploredRuins.contains(tile.getMapLocation())) {
+                int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
+                if (dist < minDist) {
+                    nearestRuin = tile.getMapLocation();
+                    minDist = dist;
+                }
+            }
         }
-
-        // Read incoming messages
-        Message[] messages = rc.readMessages(-1);
-        for (Message m : messages) {
-            System.out.println("Tower received message: '#" + m.getSenderID() + " " + m.getBytes());
-        }
-
-        // TODO: can we attack other bots?
+        return nearestRuin;
     }
 
 
     public static void runSoldier(RobotController rc) throws GameActionException{
 
-        MapInfo[] nearbyTiles = rc.senseNearbyMapInfos();
-
         // Search for a nearby ruin to complete.
-        MapInfo curRuin = null;
-        for (MapInfo tile : nearbyTiles){
-            if (tile.hasRuin()){
-                curRuin = tile;
-            }
-        }
+        MapInfo curRuin = findNearestUnexploredRuin();
+
+        
         if (curRuin != null){
             MapLocation targetLoc = curRuin.getMapLocation();
             Direction dir = rc.getLocation().directionTo(targetLoc);
@@ -177,7 +206,6 @@ public class RobotPlayer {
             MapLocation shouldBeMarked = curRuin.getMapLocation().subtract(dir);
             if (rc.senseMapInfo(shouldBeMarked).getMark() == PaintType.EMPTY && rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
                 rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
-                System.out.println("Trying to build a tower at " + targetLoc);
             }
 
             // Fill in any spots in the pattern with the appropriate paint.
@@ -205,50 +233,74 @@ public class RobotPlayer {
         }
 
         // Try to paint beneath us as we walk to avoid paint penalties.
-        // Avoiding wasting paint by re-painting our own tiles.
-        MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
-        if (!currentTile.getPaint().isAlly() && rc.canAttack(rc.getLocation())){
-            rc.attack(rc.getLocation());
-        }
+        paintCurrentTile();
     }
 
-
+    
     public static void runMopper(RobotController rc) throws GameActionException{
-
-        // Move and attack randomly.
-        Direction dir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(dir);
-        if (rc.canMove(dir)){
-            rc.move(dir);
-        }
-        if (rc.canMopSwing(dir)){
-            rc.mopSwing(dir);
-            System.out.println("Mop Swing! Booyah!");
-        }
-        else if (rc.canAttack(nextLoc)){
-            rc.attack(nextLoc);
-        }
-
-        // We can also move our code into different methods or classes to better organize it!
-        updateEnemyRobots(rc);
+        randommove();
     }
 
-    public static void updateEnemyRobots(RobotController rc) throws GameActionException{
+    public static void runSplasher(RobotController rc) throws GameActionException {
+        randommove();
+    }
 
-        // Sensing methods can be passed in a radius of -1 to automatically
-        // use the largest possible value.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    public static updateEnemyRobots(RobotController rc) throws GameActionException{
+        
+        // Sensing methods can be passed in a radius of -1 to automatically use the largest possible value.
         RobotInfo[] enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
+        
         if (enemyRobots.length != 0){
-            rc.setIndicatorString("There are nearby enemy robots! Scary!");
-            // Save an array of locations with enemy robots in them for possible future use.
             MapLocation[] enemyLocations = new MapLocation[enemyRobots.length];
             for (int i = 0; i < enemyRobots.length; i++){
                 enemyLocations[i] = enemyRobots[i].getLocation();
             }
             
-            RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
-
             // Occasionally try to tell nearby allies how many enemy robots we see.
+            RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
             if (rc.getRoundNum() % 20 == 0){
                 for (RobotInfo ally : allyRobots){
                     if (rc.canSendMessage(ally.location, enemyRobots.length)){
@@ -257,6 +309,20 @@ public class RobotPlayer {
                 }
             }
         }
+        return enemyRobots;
     }
+
+    private static void attackEnemies(RobotContoller rc) throws GameActionException {
+
+        if (enemyRobots.length > 0) {
+            // Attack the first enemy in the list
+            RobotInfo targetEnemy = enemies[0];
+            if (rc.canAttack(targetEnemy.getLocation())) {
+                rc.attack(targetEnemy.getLocation());
+            }
+        }                      
+    }
+
+
 }
 

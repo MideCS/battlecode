@@ -10,9 +10,6 @@ import java.util.Random;
 import java.util.Set;
 
 
-
-import apple.laf.JRSUIConstants.Direction;
-
 public class RobotPlayer {
 
     static int turnCount = 0;
