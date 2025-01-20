@@ -1,7 +1,5 @@
 package RPGbot;
-
 import battlecode.common.*;
-
 import java.util.HashMap;
 import java.util.Random;
 
