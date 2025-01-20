@@ -1,5 +1,4 @@
 package Selfmade;
-
 import battlecode.common.*;
 import scala.Unit;
 
