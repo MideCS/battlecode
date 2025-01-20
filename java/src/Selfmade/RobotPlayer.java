@@ -258,9 +258,9 @@ public class RobotPlayer {
 
     // the build ruin thing could definitely be modularized a lot more.
     public static void runSoldier(RobotController rc) throws GameActionException{
+        // Try to paint beneath us as we walk to avoid paint penalties.
         paintCurrentTile(rc);
-        updateTowerLocations(rc);
-        // Current Issue: Found a Ruin, but does not want to paint around. Keeps finding "closest ruin".
+
 
         // Search for a nearby ruin to complete.
         MapLocation curRuin = findNearestUnexploredRuin(rc);
@@ -307,7 +307,18 @@ public class RobotPlayer {
 
         // Move and attack randomly if no objective.
         explore(rc, false);
-        // Try to paint beneath us as we walk to avoid paint penalties.
+        Direction attackDir = getNearbyEnemiesDir(rc, 9);
+
+        if (attackDir != null) {
+
+            MapLocation attackLoc = rc.getLocation().add(attackDir);
+
+            if (rc.canAttack(attackLoc)) {
+                rc.canAttack(attackLoc);
+            }
+
+        }
+        updateTowerLocations(rc);
     }
 
     
