@@ -199,7 +199,11 @@ public class RobotPlayer {
         // TODO: Function to explore more effectively.
         MapLocation nextLoc = rc.getLocation().add(dir);
         if (rc.canMove(dir) && !exploredTiles.contains(randomLoc)){
-            if (rc.senseMapInfo(randomLoc).getPaint().isAlly() || !stayOnPaint) {
+            boolean isEnemy =
+                    (rc.senseMapInfo(randomLoc).getPaint() == PaintType.ENEMY_PRIMARY ||
+                    rc.senseMapInfo(randomLoc).getPaint() == PaintType.ENEMY_SECONDARY);
+
+            if (rc.senseMapInfo(randomLoc).getPaint().isAlly() || (!stayOnPaint &&  !isEnemy)) {
                 rc.move(dir);
                 exploredTiles.add(randomLoc);
                 System.out.println("Moved randomly to " + randomLoc);
