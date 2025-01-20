@@ -14,18 +14,17 @@ public class RobotPlayer {
     static boolean spawnedMopper = false;
     static HashMap<MapLocation, Integer> checked = new HashMap<>();
     static int checked_limit = 1;
-
     static final Random rng = new Random(6147);
 
     static final Direction[] directions = {
-        Direction.NORTH,
-        Direction.NORTHEAST,
-        Direction.EAST,
-        Direction.SOUTHEAST,
-        Direction.SOUTH,
-        Direction.SOUTHWEST,
-        Direction.WEST,
-        Direction.NORTHWEST,
+            Direction.NORTH,
+            Direction.NORTHEAST,
+            Direction.EAST,
+            Direction.SOUTHEAST,
+            Direction.SOUTH,
+            Direction.SOUTHWEST,
+            Direction.WEST,
+            Direction.NORTHWEST,
     };
 
     @SuppressWarnings("unused")
@@ -43,13 +42,13 @@ public class RobotPlayer {
 
             try {
                 switch (rc.getType()){
-                    case SOLDIER: runSoldier(rc); break; 
+                    case SOLDIER: runSoldier(rc); break;
                     case MOPPER: runMopper(rc); break;
                     case SPLASHER: runSplasher(rc); break; // Consider upgrading examplefuncsplayer to use splashers!
                     default: runTower(rc); break;
-                    }
                 }
-             catch (GameActionException e) {
+            }
+            catch (GameActionException e) {
                 System.out.println("GameActionException");
                 e.printStackTrace();
 
@@ -228,7 +227,7 @@ public class RobotPlayer {
             for (int i = 0; i < enemyRobots.length; i++){
                 enemyLocations[i] = enemyRobots[i].getLocation();
             }
-            
+
             RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
 
             // Occasionally try to tell nearby allies how many enemy robots we see.
