@@ -126,7 +126,7 @@ public class RobotPlayer {
 
         // Selects a random unit with a non-uniform distribution
         if (nextUnit == null) {
-            int robotType = rng.nextInt(4);
+            int robotType = rng.nextInt(6);
             if (robotType == 0 || robotType == 1 || robotType == 2 || robotType == 3) {
                 nextUnit = UnitType.SOLDIER;
             } else if (robotType == 4 || robotType == 5) {
@@ -192,20 +192,23 @@ public class RobotPlayer {
     }
 
     // This function will run a more effective search for important tiles by restricting movement to previously unchecked tiles.
-    private static void explore(RobotController rc) throws GameActionException {
+    private static void explore(RobotController rc, boolean stayOnPaint) throws GameActionException {
 
         Direction dir = directions[rng.nextInt(directions.length)];
         MapLocation randomLoc = rc.getLocation().add(dir);
         // TODO: Function to explore more effectively.
         MapLocation nextLoc = rc.getLocation().add(dir);
         if (rc.canMove(dir) && !exploredTiles.contains(randomLoc)){
-            rc.move(dir);
-            exploredTiles.add(randomLoc);
-            System.out.println("Moved randomly to " + randomLoc);
+            if (rc.senseMapInfo(randomLoc).getPaint().isAlly() || !stayOnPaint) {
+                rc.move(dir);
+                exploredTiles.add(randomLoc);
+                System.out.println("Moved randomly to " + randomLoc);
+
+            }
         }
 
         // If no new location to move to, then move to random location if canMove.
-        else if (rc.canMove(dir)) {
+        else if (rc.canMove(dir) && !stayOnPaint) {
             rc.move(dir);
 //            System.out.println("Failed to move randomly towards " + dir);
         }
@@ -299,18 +302,43 @@ public class RobotPlayer {
         }
 
         // Move and attack randomly if no objective.
-        explore(rc);
+        explore(rc, false);
         // Try to paint beneath us as we walk to avoid paint penalties.
     }
 
     
     public static void runMopper(RobotController rc) throws GameActionException{
-        explore(rc);
+        MapLocation loc = rc.getLocation();
+        explore(rc, true);
+        Direction swingDir = getNearbyEnemiesDir(rc, 8);
+
+        if (swingDir != null) {
+
+            if (rc.canMopSwing(swingDir)) {
+                rc.mopSwing(swingDir);
+            }
+
+        }
+
+        MapLocation attackLoc = null;
+
+        MapInfo[] tileInfos = rc.senseNearbyMapInfos(loc, 2);
+        for (MapInfo tile : tileInfos) {
+            if (tile.getPaint() == PaintType.ENEMY_PRIMARY || tile.getPaint() == PaintType.ENEMY_SECONDARY) {
+                attackLoc = tile.getMapLocation();
+                break;
+            }
+        }
+
+
+        if (attackLoc != null && rc.canAttack(attackLoc)) {
+            rc.attack(attackLoc);
+        }
 
     }
 
     public static void runSplasher(RobotController rc) throws GameActionException {
-        explore(rc);
+        explore(rc, true);
     }
 
     private static void updateTowerLocations(RobotController rc) throws GameActionException {
@@ -325,6 +353,8 @@ public class RobotPlayer {
 
         }
     }
+
+
 
     // Methods that don't do anything yet but that could be changed.
 
@@ -352,16 +382,15 @@ public class RobotPlayer {
     //     }
     // }
 
-    // private static void attackEnemies(RobotController rc) throws GameActionException {
+     private static Direction getNearbyEnemiesDir(RobotController rc, int radius) throws GameActionException {
+         RobotInfo[] enemyRobots = rc.senseNearbyRobots(radius, rc.getTeam().opponent());
 
-    //     if (enemyRobots.length > 0) {
-    //         // Attack the first enemy in the list
-    //         RobotInfo targetEnemy = enemies[0];
-    //         if (rc.canAttack(targetEnemy.getLocation())) {
-    //             rc.attack(targetEnemy.getLocation());
-    //             System.out.println("Attacked enemy at " + targetEnemy.getLocation());
-    //         }
-    //     }                      
-    // }
+         if (enemyRobots.length > 0) {
+             // Attack the first enemy in the list
+             RobotInfo targetEnemy = enemyRobots[0];
+             return rc.getLocation().directionTo(targetEnemy.getLocation());
+         }
+         return null;
+     }
 
 }
