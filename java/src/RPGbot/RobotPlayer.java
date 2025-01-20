@@ -14,7 +14,6 @@ public class RobotPlayer {
     static boolean spawnedMopper = false;
     static HashMap<MapLocation, Integer> checked = new HashMap<>();
     static int checked_limit = 1;
-
     static final Random rng = new Random(6147);
 
     static final Direction[] directions = {
