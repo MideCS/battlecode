@@ -1,10 +1,8 @@
 package Selfmade;
-
 import battlecode.common.*;
-
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.Random;
 
 /**
@@ -13,11 +11,12 @@ import java.util.Random;
  */
 public class RobotPlayer {
 
-    // Game State variables 
+    // Game State variables
     static int turnCount = 0;
     static boolean isSaving = false;
-    static int savingTurns = 0;
-    static int savingCooldown = 0;
+    static int saveTurns = 0;
+    static boolean isMessenger = false;
+    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
 
     // Track issues related to saving
     private enum SavingAction {
@@ -32,21 +31,37 @@ public class RobotPlayer {
         Direction.SOUTH, Direction.SOUTHWEST, Direction.WEST, Direction.NORTHWEST
     };
 
-    // Tracking other important stuff
-    static HashSet<MapLocation> exploredRuins = new HashSet<>();
-    static ArrayList<MapLocation> knownTowers = new ArrayList<>();
+    // Example of a "preferred build order"
+    // Weighted: 3/5 Soldiers, 1/5 Moppers, 1/5 Splashers
+    private static final UnitType[] PREFERRED_BUILD_ORDER = new UnitType[]{
+        UnitType.SOLDIER, UnitType.SOLDIER, UnitType.SOLDIER,
+        UnitType.MOPPER,
+        UnitType.SPLASHER
+    };
 
-    @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
 
+        // Assign messenger to about half of our Moppers
+        if (rc.getType() == UnitType.MOPPER && rc.getID() % 2 == 0) {
+            isMessenger = true;
+        }
+
         while (true) {
-            turnCount++;  // Increment the turn counter 
+            turnCount++;  // Increment the turn counter
             try {
-                switch (rc.getType()){
-                    case SOLDIER: runSoldier(rc); break; 
-                    case MOPPER: runMopper(rc); break;
-                    case SPLASHER: runSplasher(rc); break; 
-                    default: runTower(rc); break;
+                switch (rc.getType()) {
+                    case SOLDIER:
+                        runSoldier(rc);
+                        break;
+                    case MOPPER:
+                        runMopper(rc);
+                        break;
+                    case SPLASHER:
+                        runSplasher(rc);
+                        break;
+                    default:
+                        runTower(rc);
+                        break;
                 }
             }
             catch (GameActionException e) {
@@ -62,85 +77,210 @@ public class RobotPlayer {
 
     }
 
+    // ===========================================================
+    //                    TOWER LOGIC
+    // ===========================================================
+    public static void runTower(RobotController rc) throws GameActionException {
+        manageResources(rc);
+        processMessages(rc);
+        buildUnits(rc);
+    }
+
     private static void manageResources(RobotController rc) throws GameActionException {
-
-        // Decrement saving turns until we reach zero, then initiate the cooldown period
-        if (savingTurns > 0) {
-            savingTurns--;
-
-            if (savingTurns == 0) {
-                switch (lastSavingAction) {
-                    case SAVE_CHIPS:
-                        savingCooldown = 20; break;
-                    case UPGRADE_TOWER:
-                        savingCooldown = 30; break;
-                    default:
-                        savingCooldown = 0; break;
-                }
-                lastSavingAction = SavingAction.NONE;
-            }
-        } else if (savingCooldown > 0) {
-            savingCooldown--;
-        } else {
+        if (saveTurns == 0) {
             isSaving = false;
+        } else {
+            saveTurns--;
         }
     }
 
     private static void processMessages(RobotController rc) throws GameActionException {
-        for (Message message: rc.readMessages(-1)) {
-            if (message.getBytes() == MessageType.SAVE_CHIPS.ordinal()){
-                savingTurns = 20;
+        for (Message message : rc.readMessages(-1)) {
+            // Basic message->action interpretation
+            if (!isSaving && message.getBytes() == SavingAction.SAVE_CHIPS.ordinal()) {
+                saveTurns = 20;
                 isSaving = true;
                 lastSavingAction = SavingAction.SAVE_CHIPS;
-            } else if (message.getBytes() == MessageType.UPGRADE_TOWER.ordinal()){
-                savingTurns = 30;
+            } else if (!isSaving && message.getBytes() == SavingAction.UPGRADE_TOWER.ordinal()) {
+                saveTurns = 30;
                 isSaving = true;
                 lastSavingAction = SavingAction.UPGRADE_TOWER;
             }
         }
     }
 
+    /**
+     * Build the next unit following a "preferred build order."
+     */
     private static void buildUnits(RobotController rc) throws GameActionException {
         if (isSaving) {
             return; // Do not produce units while saving
         }
 
-        // Build two robots in random directions
-        Direction dir1 = directions[rng.nextInt(directions.length)];
-        Direction dir2 = directions[rng.nextInt(directions.length)];
-        MapLocation buildLoc1 = rc.getLocation().add(dir1);
-        MapLocation buildLoc2 = rc.getLocation().add(dir2);
+        // Pick next unit from the preferred build order
+        UnitType nextUnit = PREFERRED_BUILD_ORDER[rng.nextInt(PREFERRED_BUILD_ORDER.length)];
 
-        UnitType nextUnit = null;
-        int robotType = rng.nextInt(5);
-        if (robotType == 0 || robotType == 1 || robotType == 2) {
-            nextUnit = UnitType.SOLDIER;
-        } else if (robotType == 4) {
-            nextUnit = UnitType.MOPPER;
-        } else if (robotType == 5) {
-            nextUnit = UnitType.SPLASHER;
-        }
+        // Attempt to build in a random direction
+        // Shuffle directions to avoid always trying the same order
+        ArrayList<Direction> shuffled = new ArrayList<>(Arrays.asList(directions));
+        Collections.shuffle(shuffled, rng);
 
-        if (nextUnit != null) {
-            if (rc.canBuildRobot(nextUnit, buildLoc1)) {
-                rc.buildRobot(nextUnit, buildLoc1);
-            }
-            if (rc.canBuildRobot(nextUnit, buildLoc2)) {
-                rc.buildRobot(nextUnit, buildLoc2);
+        for (Direction dir : shuffled) {
+            MapLocation buildLoc = rc.getLocation().add(dir);
+            if (rc.canBuildRobot(nextUnit, buildLoc)) {
+                rc.buildRobot(nextUnit, buildLoc);
+                break;
             }
         }
+    }
 
-    }   
+    // ===========================================================
+    //                    SOLDIER LOGIC
+    // ===========================================================
+    public static void runSoldier(RobotController rc) throws GameActionException {
+        // 1. Try to complete a ruin if available
+        boolean didBuild = attemptRuinCompletion(rc);
 
-    public static void runTower(RobotController rc) throws GameActionException{
-        manageResources(rc);
-        processMessages(rc);
-        buildUnits(rc);
+        // 2. If we did not build anything, do random movement/attack
+        if (!didBuild) {
+            performRandomMovementAndAttack(rc);
+        }
+
+        // 3. Paint current tile to avoid penalties
+        paintCurrentTile(rc);
+    }
+
+    /**
+     * Attempt to find and complete a nearby ruin. Returns true if we at least tried to build.
+     */
+    private static boolean attemptRuinCompletion(RobotController rc) throws GameActionException {
+        MapLocation curRuin = findNearestUnexploredRuin(rc);
+        if (curRuin == null) {
+            return false;
+        }
+
+        // Move toward the ruin
+        Direction dir = rc.getLocation().directionTo(curRuin);
+        if (rc.canMove(dir)) {
+            rc.move(dir);
+        }
+
+        // Attempt to mark the tower pattern if the tile is empty
+        MapLocation shouldBeMarked = rc.getLocation().add(dir.opposite());
+        MapInfo markTile = rc.senseMapInfo(shouldBeMarked);
+        if (markTile != null && markTile.getMark() == PaintType.EMPTY
+                && rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin)) {
+            rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin);
+            System.out.println("Marked tower pattern at " + curRuin);
+        }
+
+        // Fill in any missing paint in the pattern
+        MapInfo[] nearbyTiles = rc.senseNearbyMapInfos(curRuin, 8);
+        for (MapInfo patternTile : nearbyTiles) {
+            if (patternTile.getMark() != patternTile.getPaint() && patternTile.getMark() != PaintType.EMPTY) {
+                boolean useSecondaryColor = (patternTile.getMark() == PaintType.ALLY_SECONDARY);
+                if (rc.canAttack(patternTile.getMapLocation())) {
+                    rc.attack(patternTile.getMapLocation(), useSecondaryColor);
+                }
+            }
+        }
+
+        // Complete the tower if possible
+        if (rc.canCompleteTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin)) {
+            rc.completeTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, curRuin);
+            rc.setTimelineMarker("Tower built", 0, 255, 0);
+            System.out.println("Built a tower at " + curRuin + "!");
+        }
+
+        return true; // We attempted ruin completion logic
+    }
+
+    /**
+     * Randomly move and possibly attack an adjacent tile (sample logic).
+     */
+    private static void performRandomMovementAndAttack(RobotController rc) throws GameActionException {
+        Direction randomDir = directions[rng.nextInt(directions.length)];
+        if (rc.canMove(randomDir)) {
+            rc.move(randomDir);
+        }
+
+        // Optional random attack on adjacent tile
+        MapLocation attackLoc = rc.getLocation().add(randomDir);
+        if (rc.canAttack(attackLoc)) {
+            rc.attack(attackLoc);
+        }
+    }
+
+    // ===========================================================
+    //                    MOPPER LOGIC
+    // ===========================================================
+    public static void runMopper(RobotController rc) throws GameActionException {
+        // 1. If saving & messenger, move to nearest tower
+        moveTowardNearestTowerIfSavingAndMessenger(rc);
+
+        // 2. Do random movement & Mopper-specific attacking
+        performMopperMovementAndAttack(rc);
+
+        // 3. Always update known enemy robots
+        updateEnemyRobots(rc);
+
+        // 4. Messenger logic: update towers, check ruins
+        if (isMessenger) {
+            rc.setIndicatorDot(rc.getLocation(), 255, 0, 0);
+            updateFriendlyTowers(rc);
+            checkNearbyRuins(rc);
+        }
+    }
+
+    private static void moveTowardNearestTowerIfSavingAndMessenger(RobotController rc) throws GameActionException {
+        if (!isSaving || !isMessenger || knownTowers.isEmpty()) {
+            return;
+        }
+        MapLocation nearestTower = null;
+        int minDist = Integer.MAX_VALUE;
+        for (MapLocation tower : knownTowers) {
+            int dist = tower.distanceSquaredTo(rc.getLocation());
+            if (dist < minDist) {
+                minDist = dist;
+                nearestTower = tower;
+            }
+        }
+        if (nearestTower != null) {
+            Direction dir = rc.getLocation().directionTo(nearestTower);
+            if (rc.canMove(dir)) {
+                rc.move(dir);
+            }
+        }
+    }
+
+    private static void performMopperMovementAndAttack(RobotController rc) throws GameActionException {
+        // Move in a random direction
+        Direction dir = directions[rng.nextInt(directions.length)];
+        MapLocation nextLoc = rc.getLocation().add(dir);
+
+        if (rc.canMove(dir)) {
+            rc.move(dir);
+        }
+
+        // Mop-swing if possible, else normal attack
+        if (rc.canMopSwing(dir)) {
+            rc.mopSwing(dir);
+        } else if (rc.canAttack(nextLoc)) {
+            rc.attack(nextLoc);
+        }
+    }
+
+    // ===========================================================
+    //                    SPLASHER LOGIC
+    // ===========================================================
+    public static void runSplasher(RobotController rc) throws GameActionException {
+        // Very simple behavior: random movement
+        randomMove(rc);
     }
 
     private static void randomMove(RobotController rc) throws GameActionException {
         Direction randomDir = directions[rng.nextInt(directions.length)];
-        if (rc.canMove(randomDir)){
+        if (rc.canMove(randomDir)) {
             rc.move(randomDir);
             System.out.println("Moved to " + rc.getLocation().add(randomDir));
         } else {
@@ -148,21 +288,15 @@ public class RobotPlayer {
         }
     }
 
-    private static void paintCurrentTile(RobotController rc) throws GameActionException {
-        MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
-        if (!currentTile.getPaint().isAlly() && rc.canAttack(rc.getLocation())) {
-            rc.attack(rc.getLocation(), false); 
-            System.out.println("Painted current tile at " + rc.getLocation());
-        }
-    }
-
+    // ===========================================================
+    //                HELPER METHODS / COMMON LOGIC
+    // ===========================================================
     private static MapLocation findNearestUnexploredRuin(RobotController rc) throws GameActionException {
         MapInfo[] tiles = rc.senseNearbyMapInfos();
         MapLocation nearestRuin = null;
         int minDist = Integer.MAX_VALUE;
-
         for (MapInfo tile : tiles) {
-            if (tile.hasRuin() && !exploredRuins.contains(tile.getMapLocation())) {
+            if (tile.hasRuin() && rc.senseRobotAtLocation(tile.getMapLocation()) == null) {
                 int dist = rc.getLocation().distanceSquaredTo(tile.getMapLocation());
                 if (dist < minDist) {
                     nearestRuin = tile.getMapLocation();
@@ -173,121 +307,70 @@ public class RobotPlayer {
         return nearestRuin;
     }
 
-    // This function definitely has some bugs
-    private static void sendMessengerToNotify(RobotController rc) throws GameActionException {
-        RobotInfo [] friendlyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
-        for (RobotInfo robot : friendlyRobots) {
-            if (robot.getType() == UnitType.MOPPER && rc.canSendMessage(robot.getLocation())) {
-                rc.setIndicatorDot(0, 255, 0); // Only going to send one Mopper back,
-                rc.sendMessage(robot.getLocation(), MessageType.SAVE_CHIPS.ordinal());
-                break;
+    public static void updateEnemyRobots(RobotController rc) throws GameActionException {
+        RobotInfo[] enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
+        if (enemyRobots.length != 0) {
+            MapLocation[] enemyLocations = new MapLocation[enemyRobots.length];
+            for (int i = 0; i < enemyRobots.length; i++) {
+                enemyLocations[i] = enemyRobots[i].getLocation();
             }
-        }
-    }
-
-    // the build ruin thing could definitley be modularized a lot more.
-    public static void runSoldier(RobotController rc) throws GameActionException{
-
-        // Search for a nearby ruin to complete.
-        MapLocation curRuin = findNearestUnexploredRuin(rc);
-
-        if (curRuin != null){
-            MapLocation targetLoc = curRuin;
-            Direction dir = rc.getLocation().directionTo(targetLoc);
-            if (rc.canMove(dir))
-                rc.move(dir);
-            else
-                System.out.println("Cannot move towards " + dir);
-
-            // Mark the pattern we need to draw to build a tower here if we haven't already.
-            // Note: MapLocation does not have a subtract method. Instead, calculate the location manually.
-            MapLocation shouldBeMarked = new MapLocation(targetLoc.x - dir.dx, targetLoc.y - dir.dy);
-            MapInfo markTile = rc.senseMapInfo(shouldBeMarked);
-            if (markTile.getMark() == PaintType.EMPTY && rc.canMarkTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
-                rc.markTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
-                System.out.println("Marked tower pattern at " + targetLoc);
-            }
-
-            // Fill in any spots in the pattern with the appropriate paint.
-            MapInfo[] nearbyTiles = rc.senseNearbyMapInfos(targetLoc, 8);
-            for (MapInfo patternTile : nearbyTiles){
-                if (patternTile.getMark() != patternTile.getPaint() && patternTile.getMark() != PaintType.EMPTY){
-                    boolean useSecondaryColor = patternTile.getMark() == PaintType.ALLY_SECONDARY;
-                    if (rc.canAttack(patternTile.getMapLocation()))
-                        rc.attack(patternTile.getMapLocation(), useSecondaryColor);
+            // Example: send a message every 20 rounds
+            RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
+            if (rc.getRoundNum() % 20 == 0) {
+                for (RobotInfo ally : allyRobots) {
+                    if (rc.canSendMessage(ally.location, enemyRobots.length)) {
+                        rc.sendMessage(ally.location, enemyRobots.length);
+                    }
                 }
             }
+        }
+    }
 
-            // Complete the ruin if we can.
-            if (rc.canCompleteTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc)){
-                rc.completeTowerPattern(UnitType.LEVEL_ONE_PAINT_TOWER, targetLoc);
-                rc.setTimelineMarker("Tower built", 0, 255, 0);
-                // if we complete the ruin, let's add it to the list of explored ruins.
-                exploredRuins.add(targetLoc);
+    public static void updateFriendlyTowers(RobotController rc) throws GameActionException {
+        RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
+        for (RobotInfo ally : allyRobots) {
+            if (!ally.getType().isTowerType()) {
+                continue;
+            }
+            MapLocation allyLoc = ally.location;
+            if (knownTowers.contains(allyLoc)) {
+                // Send a message to the nearby tower if we are saving
+                if (isSaving && rc.canSendMessage(allyLoc)) {
+                    rc.sendMessage(allyLoc, SavingAction.SAVE_CHIPS.ordinal());
+                    isSaving = false;
+                }
+                continue;
+            }
+            // Add to our known towers array
+            knownTowers.add(allyLoc);
+        }
+    }
 
-                System.out.println("Built a tower at " + targetLoc + "!");
+    public static void checkNearbyRuins(RobotController rc) throws GameActionException {
+        // Search for nearby ruins
+        MapInfo[] nearbyTiles = rc.senseNearbyMapInfos();
+        for (MapInfo tile : nearbyTiles) {
+            MapLocation tileLoc = tile.getMapLocation();
+            if (!tile.hasRuin() || rc.senseRobotAtLocation(tileLoc) != null) {
+                continue;
+            }
+            // Heuristic to see if the ruin is being built on
+            MapLocation markLoc = tileLoc.add(tileLoc.directionTo(rc.getLocation()));
+            MapInfo markInfo = rc.senseMapInfo(markLoc);
+            if (markInfo.getMark().isAlly()) {
+                isSaving = true;
+                return;
             }
         }
+    }
 
-        // Move and attack randomly if no objective.
-        Direction randomDir = directions[rng.nextInt(directions.length)];
-        MapLocation nextLoc = rc.getLocation().add(randomDir);
-        if (rc.canMove(randomDir)){
-            rc.move(randomDir);
-            System.out.println("Moved randomly to " + rc.getLocation().add(randomDir));
-        } else {
-            System.out.println("Failed to move randomly towards " + randomDir);
+    private static void paintCurrentTile(RobotController rc) throws GameActionException {
+        MapInfo currentTile = rc.senseMapInfo(rc.getLocation());
+        // If our tile is not ally-painted, paint it
+        if (!currentTile.getPaint().isAlly() && rc.canAttack(rc.getLocation())) {
+            rc.attack(rc.getLocation(), false);
+            System.out.println("Painted current tile at " + rc.getLocation());
         }
-
-        // Try to paint beneath us as we walk to avoid paint penalties.
-        paintCurrentTile(rc);
     }
-
-    
-    public static void runMopper(RobotController rc) throws GameActionException{
-        randomMove(rc);
-    }
-
-    public static void runSplasher(RobotController rc) throws GameActionException {
-        randomMove(rc);
-    }
-
-    // Methods that don't do anything yet but that could be changed.
-
-    // public static void updateEnemyRobots(RobotController rc) throws GameActionException{
-        
-    //     // Sensing methods can be passed in a radius of -1 to automatically use the largest possible value.
-    //     RobotInfo[] enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
-        
-    //     if (enemyRobots.length != 0){
-    //         MapLocation[] enemyLocations = new MapLocation[enemyRobots.length];
-    //         for (int i = 0; i < enemyRobots.length; i++){
-    //             enemyLocations[i] = enemyRobots[i].getLocation();
-    //         }
-            
-    //         // Occasionally try to tell nearby allies how many enemy robots we see.
-    //         RobotInfo[] allyRobots = rc.senseNearbyRobots(-1, rc.getTeam());
-    //         if (rc.getRoundNum() % 20 == 0){
-    //             for (RobotInfo ally : allyRobots){
-    //                 if (rc.canSendMessage(ally.location, enemyRobots.length)){
-    //                     rc.sendMessage(ally.location, enemyRobots.length);
-    //                     System.out.println("Sent enemy count to ally at " + ally.location);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
-    // private static void attackEnemies(RobotController rc) throws GameActionException {
-
-    //     if (enemyRobots.length > 0) {
-    //         // Attack the first enemy in the list
-    //         RobotInfo targetEnemy = enemies[0];
-    //         if (rc.canAttack(targetEnemy.getLocation())) {
-    //             rc.attack(targetEnemy.getLocation());
-    //             System.out.println("Attacked enemy at " + targetEnemy.getLocation());
-    //         }
-    //     }                      
-    // }
 
 }
