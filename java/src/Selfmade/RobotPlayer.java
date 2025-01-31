@@ -118,7 +118,7 @@ public class RobotPlayer {
                 // Only print symmetry from level 1 paint tower
                 if (rc.getType() == UnitType.LEVEL_ONE_PAINT_TOWER && 
                     (rc.getRoundNum() % 50 == 0 || lastPrintedSymmetry != currentSymmetry)) {
-                    System.out.println("[Round " + rc.getRoundNum() + "] Map Symmetry: " + currentSymmetry);
+//                    System.out.println("[Round " + rc.getRoundNum() + "] Map Symmetry: " + currentSymmetry);
                     lastPrintedSymmetry = currentSymmetry;
                 }
 
