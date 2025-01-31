@@ -310,7 +310,6 @@ public class RobotPlayer {
     public static void runSoldier(RobotController rc) throws GameActionException {
         paintCurrentTile(rc);
         processMessages(rc);
-        updateTowerLocations(rc);
         updateMapSymmetry(rc);
 
         // Attack any nearby enemy first
@@ -338,6 +337,9 @@ public class RobotPlayer {
             else fill(rc, false);
 //
         }
+
+        updateTowerLocations(rc);
+
 
         // Try advanced small map logic
 //        boolean isSmallMap = rc.getMapWidth() <= 20 && rc.getMapHeight() <= 20;
@@ -383,6 +385,13 @@ public class RobotPlayer {
      */
     private static void handleRuinBuilding(RobotController rc) throws GameActionException {
         // Complete tower if possible
+        if (knownTowers.contains(curRuin)) {
+            curRuin = null;
+            System.out.println("Tower Already Explored at " + curRuin);
+            return;
+
+
+        }
 
 
 
